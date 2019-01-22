@@ -1,0 +1,200 @@
+#===============================================================================
+# UploadThreadView
+# View that lets a client create a new piece of content on live.
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 1/10/16
+#===============================================================================
+
+import time
+import collections
+import simplejson as json
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+import JokrBackend.Custom.Utils as Utils
+from django.conf import settings
+from JokrBackend.models import Thread, Reply
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.DataCollection.DataCollector as DataCollector
+
+
+@csrf_exempt
+def UploadThread(requestData):
+    TAG = Const.Tags.Urls.UPLOAD_LIVE
+
+    securityProperties = RunThroughSecurityLayer(TAG, requestData)
+    if (not securityProperties.isSecure):
+        return securityProperties.httpResponse
+    
+    try:       
+        clientUser = securityProperties.clientUserObject
+        clientThreadText= securityProperties.jsonRequestData[Const.Views.UploadThread.JsonRequestKey.THREAD_TEXT]
+        clientThreadURL = securityProperties.jsonRequestData[Const.Views.UploadThread.JsonRequestKey.THREAD_URL]
+ 
+        asf
+        # check if this user is posting too fast
+        if (settings.RATE_LIMIT_LIVE and _UserLiveRateLimitExceeded(clientUser.id)):       
+            # log the warning and return if too many threads
+            DataCollector.logURL(TAG, { 
+                Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_TOO_MANY_REQUESTS,
+                Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.UploadLive.RATE_LIMIT_EXCEEDED,
+                Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+                Const.DataCollection.ParamNames.HAS_TEXT: (not Utils.StringIsEmpty(clientThreadText)),
+                Const.DataCollection.ParamNames.HAS_IMAGE: (not Utils.StringIsEmpty(clientThreadURL))    }) 
+
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_TOO_MANY_REQUESTS, 
+                                                        Const.DataCollection.MessageCodes.UploadLive.RATE_LIMIT_EXCEEDED) 
+
+        # Save the live thread in the DB
+        # Make sure that text and image go into the DB
+        # as an empty string if they are not present
+        if (Utils.StringIsEmpty(clientThreadText)):
+            clientThreadText = ''
+        if (Utils.StringIsEmpty(clientThreadURL)):
+            clientThreadURL = ''
+               
+        newThread = Thread(fromUser=clientUser,
+                           contentType=Const.Tags.ContentTypes.THREAD,
+                           text=clientThreadText,
+                           url=clientThreadURL)
+                     
+        # If there is an exception, roll back transaction
+        with transaction.atomic():
+            _CheckAndPruneThreads()           
+            newThread.save()
+       
+        # FOR RELEASE 1.0 ONLY
+        # return the list of threads
+        # Retrieve all threads in decending order of timeCreated
+        threads = Thread.objects.all().order_by('-timeCreated')
+  
+        # Get the stuff we need from the thread, package and return to the client
+        clientThreadsToReturn = []
+        for thread in threads:
+            objectToReturn = _GetThreadClientObject(
+                                                   id=thread.id,
+                                                   text=thread.text, 
+                                                   time=thread.timeCreated, 
+                                                   url=thread.url) 
+            clientThreadsToReturn.append(objectToReturn.getOrderedDict())   
+               
+        jsonString = json.dumps(clientThreadsToReturn)
+
+        # log and return on success            
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.UploadLive.POST_SUCCESSFUL,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+            Const.DataCollection.ParamNames.HAS_TEXT: (not Utils.StringIsEmpty(clientThreadText)),
+            Const.DataCollection.ParamNames.HAS_IMAGE: (not Utils.StringIsEmpty(clientThreadURL))    }) 
+       
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    jsonString, 'application/json')
+        
+    except Exception as e:
+        DataCollector.logServerError(e)
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.UploadLive.POST_FAILED_SERVER_ERROR,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+            Const.DataCollection.ParamNames.HAS_TEXT: (not Utils.StringIsEmpty(clientThreadText)),
+            Const.DataCollection.ParamNames.HAS_IMAGE: (not Utils.StringIsEmpty(clientThreadURL))     }) 
+
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.UploadLive.POST_FAILED_SERVER_ERROR)
+
+
+#-------------------------------------------------------------------------------
+# _CheckAndPruneThreads
+# Checks if the thread limit on a board is hit. If so, it prunes the thread
+# that was least recently created
+#
+# params:
+#     none
+# returns:
+#    nothing 
+#-------------------------------------------------------------------------------
+def _CheckAndPruneThreads():
+    
+    # get the thread count
+    numOfCurrentThreads = Thread.objects.count()
+    
+    # If the board is full already, prune a thread
+    if numOfCurrentThreads >= Const.Views.UploadThread.BOARD_CONTENT_LIMIT:
+        numThreadsToPrune = numOfCurrentThreads - Const.Views.UploadThread.BOARD_CONTENT_LIMIT
+        
+        # Get the last n threads ordered by timeCreated and delete each one
+        threadsToPrune = Thread.objects.all().order_by('timeCreated')[:numThreadsToPrune]             
+        for thread in threadsToPrune:
+              
+            # log info about the pruned thread
+            DataCollector.logServerEvent(Const.Tags.Events.PRUNE_THREAD, {
+                Const.DataCollection.ParamNames.TIME_THREAD_CREATED: thread.timeCreated  })
+                                         
+            thread.delete() # remove thread
+            
+            
+#-------------------------------------------------------------------------------
+# _UserLiveRateLimitExceeded
+# Checks if the user is posting too fast to live, for moderation
+# 
+# params:
+#    clientUserID - uuid of the client
+# returns:
+#     T/F if the user has posted too fast and needs to wait
+#-------------------------------------------------------------------------------
+def _UserLiveRateLimitExceeded(clientUserID):
+    
+    currentTime = time.time()
+    
+    # Get all the timestamps for threads, as a flat list    
+    postTimes = Thread.objects.values_list('timeCreated', flat=True) 
+    postTimes = postTimes.filter(fromUser=clientUserID) # only from this user
+    # order by time created, descending. Limit to the max # of replies we want to examine
+    postTimes = postTimes.order_by('-timeCreated')[:Const.Views.UploadLocalPost.MAX_POSTS_WITHIN_TIMEFRAME] 
+
+    # If there are at least x posts, check the min of the set against the current time
+    if len(postTimes) == Const.Views.UploadThread.MAX_POSTS_WITHIN_TIMEFRAME:
+        minPostTime = min(list(postTimes))
+        timeToleranceSeconds = Const.Views.UploadLocalPost.TIMEFRAME_MINUTES * 60
+        if (currentTime - minPostTime) < timeToleranceSeconds:
+            return True
+    
+    # else
+    return False
+
+#------------------------------------------------------------------------------ 
+# This class is a wrapper for the info of a live thread to be sent to client.
+#------------------------------------------------------------------------------ 
+class _GetThreadClientObject:
+    def __init__(self, id, text, time, url):
+        self.id = id
+        self.text = text
+        self.time = time
+        self.url = url
+        
+        # Format the optional fields - if they are null, use empty string
+        if Utils.StringIsEmpty(url):
+            self.url = ''
+        if Utils.StringIsEmpty(text):
+            self.text = ''
+        
+    # Returns an ordered dictionary. This is 
+    # necessary in order to properly json stringify the object.
+    def getOrderedDict(self):
+        
+        dict = collections.OrderedDict()
+        dict[Const.Views.GetThread.JsonResponseKey.THREAD_ID] = self.id
+        dict[Const.Views.GetThread.JsonResponseKey.THREAD_TEXT] = self.text
+        dict[Const.Views.GetThread.JsonResponseKey.THREAD_TIME] = self.time
+        dict[Const.Views.GetThread.JsonResponseKey.THREAD_URL] = self.url
+        return dict
+            
+            
+            
+    
+    
+    

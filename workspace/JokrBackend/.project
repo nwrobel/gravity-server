@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>JokrBackend</name>
+	<comment></comment>
+	<projects>
+	</projects>
+	<buildSpec>
+		<buildCommand>
+			<name>org.python.pydev.PyDevBuilder</name>
+			<arguments>
+			</arguments>
+		</buildCommand>
+	</buildSpec>
+	<natures>
+		<nature>org.python.pydev.pythonNature</nature>
+		<nature>org.python.pydev.django.djangoNature</nature>
+	</natures>
+	<linkedResources>
+		<link>
+			<name>JokrBackend</name>
+			<type>2</type>
+			<location>/var/webserver/JokrBackend</location>
+		</link>
+	</linkedResources>
+</projectDescription>

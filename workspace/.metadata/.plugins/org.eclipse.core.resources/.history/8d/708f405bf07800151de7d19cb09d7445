@@ -1,0 +1,47 @@
+#-------------------------------------------------------------------------------
+# Security Actuator module
+# Used to take action against a security threat.
+# Think of this as the security guard's club. It's the reactive part of the 
+# security layer.
+# 
+# Nick Wrobel
+# Created: 9/24/15
+# Modified: 10/22/15
+#-------------------------------------------------------------------------------
+
+import logging
+import JokrBackend.Constants as Const
+
+securityBreachLogger = logging.getLogger('JokrBackend.Security.SecurityChecker')
+securityActionLogger = logging.getLogger(__name__)
+
+def TakeSecurityAction(securityProperties):
+    # parse the security props. object
+    # if there is an error, write it to the log file
+    if (securityProperties.had404):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W000, securityProperties.requestedURL)
+        
+    if (securityProperties.hadBadRequestMethod):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W001, securityProperties.requestedURL)
+        
+    if (securityProperties.hadBadContentType):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W002, securityProperties.requestedURL)
+        
+    if (securityProperties.hadNoClientID):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W003, securityProperties.requestedURL)
+        
+    if (securityProperties.hadBadClientID):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W004, securityProperties.requestedURL)
+        
+    if (securityProperties.hadMalformedJson):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W005, securityProperties.requestedURL)
+        
+    if (securityProperties.hadWrongNumberOfJsonParamters):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W006, securityProperties.requestedURL)
+        
+    if (securityProperties.hadInvalidJsonParameters):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W007, securityProperties.requestedURL)
+        
+    if (securityProperties.hadDataValidationFail):
+        securityBreachLogger.warning(Const.SecurityLayer.Messages.W008, securityProperties.requestedURL)
+        

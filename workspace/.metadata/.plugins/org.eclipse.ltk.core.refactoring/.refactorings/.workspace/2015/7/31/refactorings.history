@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;Boomerang/Boomerang/Boomerang/management/commands/UUIDTest.py&apos;" deleteContents="false" description="Delete resource &apos;Boomerang/Boomerang/Boomerang/management/commands/UUIDTest.py&apos;" element1="/Boomerang/Boomerang/Boomerang/management/commands/UUIDTest.py" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1438120574941"/>
+</session>

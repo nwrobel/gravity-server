@@ -1,0 +1,22 @@
+#===============================================================================
+# Model for a live thread reply. 
+# 
+# Nick Wrobel 
+# Created: 7/20/15
+# Modified: 10/7/15
+#===============================================================================
+
+from django.db import models
+from JokrBackend.Models.Content.UserModel import User
+from JokrBackend.Models.Content.ThreadModel import Thread
+import JokrBackend.Constants as Const
+
+class Reply(models.Model):
+    timeCreated = models.IntegerField(default=None, null=False)
+    user = models.ForeignKey(User, related_name='user', default=None, null=False)
+    parentThread = models.ForeignKey(LiveThread, related_name='thread', default=None, null=False)
+    name = models.CharField(max_length=Const.Views.UploadReply.NAME_CHAR_MAX, default=None, null=True)
+    text = models.CharField(max_length=Const.Views.UploadReply.TEXT_CHAR_MAX, default=None, null=True)
+    url = models.CharField(default=None, null=False, max_length=Const.URL_CHAR_MAX)
+    
+    _DATABASE = 'content_db'

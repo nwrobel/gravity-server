@@ -1,0 +1,27 @@
+from django.core.management import BaseCommand
+
+
+class Command(BaseCommand): 
+
+= False
+        
+#-------------------------------------------------------------------------------
+# add_arguments
+# set up command line args  
+#-------------------------------------------------------------------------------    
+    def add_arguments(self, parser):
+        # positional argument, the content ID
+        parser.add_argument('id', nargs=1) 
+        
+        # optional arguments
+        parser.add_argument('--showimage', default=False, required=False)
+        parser.add_argument('--modinfo', default=False, required=False)
+        parser.add_argument('--moderate', default=False, required=False)
+        parser.add_argument('--fullthread', default=False, required=False)
+
+#-------------------------------------------------------------------------------
+# handle
+# the 'main method'
+#-------------------------------------------------------------------------------
+    def handle(self, *args, **options): 
+        

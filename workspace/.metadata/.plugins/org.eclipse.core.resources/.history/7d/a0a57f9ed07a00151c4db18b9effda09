@@ -1,0 +1,27 @@
+#===============================================================================
+# Model for a live thread. 
+# 
+# Nick Wrobel 
+# Created: 7/20/15
+# Modified: 10/7/15
+#===============================================================================
+
+from django.db import models
+from JokrBackend.Models.Content.UserModel import User
+import JokrBackend.Constants as Const
+
+class LiveThread(models.Model):
+    timeCreated = models.IntegerField(default=None, null=False)
+    opUser = models.ForeignKey(User, related_name='opUser', default=None, null=False)
+    opName = models.CharField(max_length=Const.Views.UploadThread.NAME_CHAR_MAX, default=None, null=True)
+    title = models.CharField(max_length=Const.Views.UploadThread.TITLE_CHAR_MAX, default=None, null=True)
+    text = models.CharField(max_length=Const.Views.UploadThread.TEXT_CHAR_MAX, default=None, null=False)
+    url = models.CharField(default=None, null=False, max_length=Const.URL_CHAR_MAX)
+        
+    # Optional fields, denormalized
+    timeOfLastReply = models.IntegerField(default=None, null=False)
+    replyCount = models.IntegerField(default=None, null=False)
+    uniquePostersCount = models.IntegerField(default=None, null=False)
+    imageReplyCount = models.IntegerField(default=None, null=False)
+    
+    _DATABASE = 'content_db'

@@ -1,0 +1,141 @@
+#-------------------------------------------------------------------------------
+# Data colletor module
+# Serves as the log module for the server.
+# Sends to 3rd party analytics and also writes to our database.
+# 
+# Nick Wrobel
+# Created: 11/4/15
+# Modified: 11/6/15
+#-------------------------------------------------------------------------------
+
+import JokrBackend.Constants as Const
+import JokrBackend.DataLogger as DataLogger
+from JokrBackend.Models.ServerErrorModels import ServerError
+from JokrBackend.Models.SecurityModels import SecurityError
+import JokrBackend.Custom.Utils as Utils
+
+#-------------------------------------------------------------------------------
+# logURL
+#-------------------------------------------------------------------------------
+def logURL(urlTag, data):
+    if (urlTag == Const.Views.UploadLocalPost.TAG):
+        DataLogger.LogUploadLocalUrl(data)
+    
+    elif (urlTag == Const.Views.GetLocalPost.TAG):
+        DataLogger.LogGetLocalUrl(data)
+    
+    elif (urlTag == Const.Views.UploadMessage.TAG):
+        DataLogger.LogUploadMessageUrl(data)
+    
+    elif (urlTag == Const.Views.GetMessage.TAG):
+        DataLogger.LogGetMessageUrl(data)
+      
+    elif (urlTag == Const.Views.UploadThread.TAG):
+        DataLogger.LogUploadLiveUrl(data)
+    
+    elif (urlTag == Const.Views.GetThread.TAG):
+        DataLogger.LogGetLiveUrl(data)
+      
+    elif (urlTag == Const.Views.UploadReply.TAG):
+        DataLogger.LogUploadReplyUrl(data)
+    
+    elif (urlTag == Const.Views.GetReply.TAG):
+        DataLogger.LogGetReplyUrl(data)
+    
+    elif (urlTag == Const.Views.Block.TAG):
+        DataLogger.LogBlockUrl(data)
+    
+    elif (urlTag == Const.Views.CreateUser.TAG):
+        DataLogger.LogSecurityCreateUrl(data)
+        
+#-------------------------------------------------------------------------------
+# logServerError
+#-------------------------------------------------------------------------------
+def logServerError(exceptionObject):
+    # pass object to utils function which will give us a dict of the info we need
+    data = Utils.GetExceptionInfo(exceptionObject)
+    
+    ServerError.objects.create(file=data[Const.DataCollection.ParamNames.FILENAME],
+                               lineNum=data[Const.DataCollection.ParamNames.LINE_NUM],
+                               exceptionType=data[Const.DataCollection.ParamNames.EXCEPTION_MESSAGE],
+                               stackTrace=data[Const.DataCollection.ParamNames.STACK_TRACE])
+    
+#-------------------------------------------------------------------------------
+# logServerEvent
+#-------------------------------------------------------------------------------
+def logServerEvent(eventTag, data):
+    if (eventTag == Const.Tags.Events.PRUNE_LOCALPOSTS):
+        DataLogger.LogUploadLocalUrl(data)
+    
+    elif (eventTag == Const.Tags.Events.PRUNE_MESSAGES):
+        DataLogger.LogGetLocalUrl(data)
+    
+    elif (eventTag == Const.Tags.Events.PRUNE_STATIC_CONTENT):
+        DataLogger.LogUploadMessageUrl(data)
+    
+    elif (eventTag == Const.Tags.Events.PRUNE_THREAD):
+        DataLogger.LogGetMessageUrl(data)
+        
+#-------------------------------------------------------------------------------
+# logSecurityError
+# Logs a security issue (identified in the security checker module of the 
+# security layer).
+# 
+# params:
+#    a security properties object
+# returns: none
+#-------------------------------------------------------------------------------
+def logSecurityError(securityProperties):
+    
+    # build up a list of error codes from the security properties object
+    # this list will tell us what security issues the request had
+    securityCheckResults = []
+    
+    if (securityProperties.had404):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.URL_NOT_FOUND)
+        
+    if (securityProperties.hadBadRequestMethod):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.BAD_REQUEST_METHOD)
+        
+    if (securityProperties.hadBadContentType):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.BAD_CONTENT_TYPE)
+        
+    if (securityProperties.hadNoClientID):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.NO_CLIENT_ID)
+        
+    if (securityProperties.hadBadClientID):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.BAD_CLIENT_ID)
+        
+    if (securityProperties.hadMalformedJson):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.MALFORMED_JSON)
+        
+    if (securityProperties.hadWrongNumberOfJsonParamters):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.WRONG_NUMBER_JSON_PARAMS)
+        
+    if (securityProperties.hadInvalidJsonParameters):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.INVALID_JSON_PARAMS)
+        
+    if (securityProperties.hadDataValidationFail):
+        securityCheckResults.append(Const.SecurityLayer.ErrorCodes.DATA_VALIDATION_FAIL)
+    
+    # put the list into a CSV format    
+    securityCheckResults = ",".join(securityCheckResults)
+    
+    # make the entry        
+    SecurityError.objects.create(fromUser=securityProperties.clientUserObject,
+                                 userIP=securityProperties.clientIP,
+                                 requestURL=securityProperties.requestedURL,
+                                 requestMethod=securityProperties.requestMethod,
+                                 requestContentType=securityProperties.requestContentType,
+                                 requestData=securityProperties.requestData,
+                                 responseCode=securityProperties.responseCode,
+                                 checkResult=securityCheckResults)
+                                 
+
+    
+    
+ 
+    
+    
+    
+    

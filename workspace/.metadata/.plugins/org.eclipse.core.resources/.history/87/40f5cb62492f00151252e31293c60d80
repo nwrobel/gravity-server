@@ -1,0 +1,33 @@
+#===============================================================================
+# Model for a post to the local feed.
+# This is the model for the 'real' (non-development) databases. 
+# 
+# Note: because of timezone issues that datetime was causing, and because I 
+# couldn't figure out how to write my own django field, I use an int field for 
+# the unix timestamp. Timezone support can be dealt with on the client end.
+# 
+# Nick Wrobel 
+# Created: 4/21/15
+# Modified: 7/10/15
+#===============================================================================
+
+from django.db import models
+from Boomerang.Custom.ImageFileStorage import ImageFileStorage
+from Boomerang.Models.UserModel import User
+
+# Create an instance of my custom image storage behavior
+ifs = ImageFileStorage()
+
+class LocalPost(models.Model):
+    timeCreated = models.IntegerField(default=0, null=False)
+    userIP = models.GenericIPAddressField(protocol='both', unpack_ipv4=False, default=None, null=False)
+    fromUser = models.ForeignKey(User)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    captionText = models.CharField(max_length=400, null=True)
+    image = models.FileField(upload_to='local/img', storage=ifs, default=None, null=False)
+    
+# Mess with this stuff to customize the table name
+#     class Meta:
+#         app_name = 'Boomerang'
+#         db_table = 'Boomerang_LocalPosts'

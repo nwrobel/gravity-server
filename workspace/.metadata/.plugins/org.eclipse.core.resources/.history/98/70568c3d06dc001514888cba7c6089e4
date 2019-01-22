@@ -1,0 +1,84 @@
+#-------------------------------------------------------------------------------
+# Module for custom django model fields
+# 
+# Nick Wrobel
+# Created: 7/28/15
+# Modified: 11/6/15
+#-------------------------------------------------------------------------------
+
+from django.db import models
+import JokrBackend.Custom.Utils as Utils
+import pyodbc
+
+#------------------------------------------------------------------------------ 
+# UUIDBinaryField
+# Custom model field for a uuid stored in binary format. This is used for 
+# optimization of uuid fields in the database.
+#------------------------------------------------------------------------------ 
+class UUIDBinaryField(models.Field, metaclass=models.SubfieldBase):
+     
+    # Note: this simply puts/gets whatever into the DB. Type checking should be 
+    # done on the client's data, and binary-string convertions should be done 
+    # with the Utils module.
+    def __init__(self, *args, **kwargs):
+        kwargs['max_length'] = 16
+        super(UUIDBinaryField, self).__init__(*args, **kwargs)
+ 
+    def db_type(self, connection):
+        return 'binary(16)'
+    
+    def get_db_prep_value(self, value, connection, prepared=False):
+        if value is None:
+            return None
+        
+        return value
+    
+#------------------------------------------------------------------------------ 
+# UUIDField
+#------------------------------------------------------------------------------ 
+# class UUIDField(models.Field, metaclass=models.SubfieldBase):
+#       
+#     # Note: this simply puts/gets whatever into the DB. Type checking should be 
+#     # done on the client's data, and binary-string convertions should be done 
+#     # with the Utils module.
+#     def __init__(self, *args, **kwargs):
+#         kwargs['default'] = Utils.CreateSequentialUUID
+#         super(UUIDField, self).__init__(*args, **kwargs)
+#   
+#     def db_type(self, connection):
+#         return 'char(32)'
+#      
+#     def get_db_prep_value(self, value, connection, prepared=False):
+#         if value is None:
+#             return None
+#          
+#         return value
+
+#------------------------------------------------------------------------------ 
+# UUIDField
+#------------------------------------------------------------------------------ 
+class UUIDField(models.Field, metaclass=models.SubfieldBase):
+      
+    # Note: this simply puts/gets whatever into the DB. Type checking should be 
+    # done on the client's data, and binary-string convertions should be done 
+    # with the Utils module.
+    def __init__(self, *args, **kwargs):
+        kwargs['default'] = Utils.CreateSequentialUUID
+        kwargs['max_length'] = 16
+        super(UUIDField, self).__init__(*args, **kwargs)
+  
+    def db_type(self, connection):
+        return 'binary(16)'
+     
+    def get_db_prep_value(self, value, connection, prepared=False):
+        if value is None:
+            return None
+         
+        return pyd
+    
+
+    
+
+
+    
+    

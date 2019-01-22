@@ -1,0 +1,96 @@
+#===============================================================================
+# View that lets a client check if he has any unread messages on the local feed.
+#
+# Nick Wrobel
+# Created: 7/9/15
+# Modified: 7/10/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from django.db import transaction
+from django.core.files.base import ContentFile
+from django.core.exceptions import ObjectDoesNotExist
+from Boomerang.Models.LocalPostModel import LocalPost
+from Boomerang.Models.UserModel import User
+from Boomerang.Models.LocalMessageModel import LocalMessage
+
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+@csrf_exempt
+def GetLocalMessages(requestData):
+    
+    clientUserId = ''
+    user = None
+    localMessageTemp = None
+    localMessages = []
+    messageImage = ''
+       
+#------------------------------------------------------------------------------ 
+# Client data validation and saving values   
+    # Try getting the client Ip.
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.error('GLMV-E3: Error: client IP address not found in request data')
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != 'POST':
+        logger.error('GLMV-E0: Client ' + str(clientIP) + ' sent a request using method other than POST')
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data
+    decodedRequestData = requestData.read().decode()
+  
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.error('GLMV-E1: Client ' + str(clientIP) + ' had an error in parsing the json data.')
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        clientUserId = requestJsonData['user']
+                  
+    except Exception: 
+        logger.exception('GLMV-E2: Client ' + str(clientIP) + ' had an error in extracting the parsed Json data (are the key names right?)')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Try to find the user in the DB
+# If the user ID does not exist, then something went wrong, because this user
+# should have been added to the DB when the user either sent a message or made
+# a localpost
+    try:
+        user = User.objects.get(pk=clientUserId)
+    except Exception:
+        logger.error('GLMV-E4: Error finding the user in the DB')
+        return HttpResponse(-1)
+    
+#------------------------------------------------------------------------------ 
+# Retreive all messages from the DB
+    
+    try:
+        localMessages = LocalMessage.objects.filter(toUser=clientUserId)
+        for lm in LocalMessages:
+            lm.image.open(mode='r')
+            messageImage = lp.image.read()
+            lm.image.close()
+
+            
+
+
+    

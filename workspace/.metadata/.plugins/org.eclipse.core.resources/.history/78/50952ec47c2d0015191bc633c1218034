@@ -1,0 +1,113 @@
+#===============================================================================
+# Script to fill out the 'Boomerang_localposttest1' table with some realistic
+# data and save images. See the docs for more info on this table.
+#
+# To run this script, use 'python manage.py PopulateLocalPostTest1'
+#
+# Nick Wrobel
+# Created: 5/21/15
+# Modified: 5/21/15 
+#===============================================================================
+
+from django.core.files.base import ContentFile
+import urllib.request
+import gzip
+import base64
+import os
+import math
+from Boomerang.Models.LocalPostModel_test1 import LocalPostTest1
+from django.core.management import BaseCommand
+from django.conf import settings
+
+# Create a class Command to use django manage command functionality
+class Command(BaseCommand):
+    # A command must define handle(), all work happends here
+    def handle(self, *args, **options):
+#------------------------------------------------------------------------------ 
+# CONSTANTS
+         
+        # Bounding box, from which we will use our lat and long points.
+        # Start at top-left point and work towards the bottom-right.
+        startingLat = 34.000710
+        stoppingLat = 33.037369
+        startingLong = -81.034814
+        stoppingLong = -80.540863
+         
+        # How much we should increment the GPS coords. for lat and long
+        # Change these to increase/decrease LocalPost density
+        latIncr = 0.1
+        longIncr = 0.1
+         
+        # The url from which to get random images
+        randImgUrl = 'http://lorempixel.com/480/720'
+         
+        # Path for the temp image and the temp gzip
+        tmpImgPath = settings.MEDIA_ROOT + '/local/localPostTest1/tmpImg.jpg'
+        tmpGzPath = settings.MEDIA_ROOT + '/local/localPostTest1/tmpGzip.gz'
+         
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+        numberOfPosts = 0
+        currentLat = 0
+        currentLong = 0
+        numberOfPostsDone = 0
+        post = None
+        filename = ''
+        imageFile = None
+        infile = None
+        outfile = None
+        
+        numberOfPosts = math.ceil((startingLat - stoppingLat) / latIncr) * math.ceil((stoppingLong - startingLong) / longIncr)
+        print('Creating table with ', numberOfPosts, ' LocalPosts')
+        
+        currentLat = startingLat
+        currentLong = startingLong
+         
+        # Iterate over the bounding box. Each time latitude is incremented, run through
+        # all the range of longitude and create LocalPosts for them.
+        while currentLat >= stoppingLat:
+            while currentLong <= stoppingLong:
+                post = LocalPostTest1()
+                post.ipAddress = '127.0.0.1' # Dummy value
+                post.latitude = currentLat
+                post.longitude = currentLong        
+                post.save()
+                filename = str(post.id)
+                 
+                # Get an image from a random image src, save on disk
+                urllib.request.urlretrieve (randImgUrl, tmpImgPath)  
+                # print('getting image ', filename)
+                 
+                # Open the image file, gzip it, write gzip it, write gz file to disk.
+                infile = open(tmpImgPath, 'rb')
+                outfile = gzip.open(tmpGzPath, 'wb')
+                outfile.writelines(infile)
+                outfile.close()
+                infile.close()
+                 
+                # Open gz file, base64 it, put this in a contentFile and save it 
+                # in the db directory as the LocalPost ID.
+                with open(tmpGzPath, "rb") as gzImageFile:
+                    imageStr = base64.b64encode(gzImageFile.read()).decode()
+                     
+                imageFile = ContentFile(imageStr)     
+                post.image.save(filename, imageFile)
+                 
+                currentLong = currentLong + longIncr
+                numberOfPostsDone = numberOfPostsDone + 1
+            print(numberOfPostsDone, '/', numberOfPosts, ' complete')
+            currentLat = currentLat - latIncr
+            currentLong = startingLong # note: reset starting long each time to continue with the next latitude
+         
+        # Clean up temp files
+        os.remove(tmpImgPath)
+        os.remove(tmpGzPath)
+    
+
+        
+
+
+
+
+    

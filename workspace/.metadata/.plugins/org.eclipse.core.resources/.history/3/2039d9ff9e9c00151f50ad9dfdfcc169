@@ -1,0 +1,449 @@
+#===============================================================================
+# GetLocalPostView
+# View that takes some client request data for some localPosts, pulls 
+# LocalPosts from the database, and sends them to the client.
+#
+# Nick Wrobel
+# Created: 5/23/15
+# Modified: 12/2/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+from django.db import connection
+import simplejson as json
+from django.conf import settings
+from JokrBackend.Models.ContentModels import LocalPost
+from JokrBackend.Models.ModerationModels import Block
+from JokrBackend.Custom.Utils import ConvertBinaryToUUID
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from  JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer
+import JokrBackend.DataCollector as DataCollector 
+import JokrBackend.Custom.Utils as Utils
+
+
+@csrf_exempt
+def GetLocalPost(requestData):
+    TAG = Const.Tags.Urls.GET_LOCAL
+    
+    securityProperties = RunThroughSecurityLayer(TAG, requestData)
+    if (not securityProperties.isSecure):
+        return HttpResponseFactory.MakeSecurityErrorHttpResponse(securityProperties)
+    
+    try:      
+        clientUser = securityProperties.clientUserObject
+        clientNumPostsRequested = securityProperties.jsonRequestData[Const.Views.GetLocalPost.JsonRequestKey.COUNT]
+        clientSeenPosts = securityProperties.jsonRequestData[Const.Views.GetLocalPost.JsonRequestKey.SEEN]
+        clientLatitude = securityProperties.jsonRequestData[Const.Views.GetLocalPost.JsonRequestKey.LATITUDE]
+        clientLongitude = securityProperties.jsonRequestData[Const.Views.GetLocalPost.JsonRequestKey.LONGITUDE]
+        
+        localPosts = None
+    
+        # If the list images the client has seen is empty,
+        # set the list to be non-empty with a dummy value of 0.
+        # This prevents the query from breaking.
+        if not clientSeenPosts:
+            clientSeenPosts = [0]
+        
+        # Get a list of users that this user has blocked on local
+        blockedUserList = _GetBlockedUsersList(clientUser)
+                    
+        # Run the local algo.
+        localPosts = _RunLocalAlgorithm(clientID=clientUser.id, 
+                                        latitude=clientLatitude, 
+                                        longitude=clientLongitude, 
+                                        numOfPostsRequested=clientNumPostsRequested, 
+                                        postsToExclude=clientSeenPosts, 
+                                        blockedUsers=blockedUserList)
+        
+        
+        # Package the localPosts  
+        # Iterate over the results set. Make 'LocalPostClientObject' out of each result
+        # Add these objects to a list as a dictionary. Json stringify the whole list,
+        # using simplejson.
+        
+        clientPostListToReturn = []
+        for lp in localPosts:
+            clientPostToReturn = _GetLocalPostClientObject(postID=lp.id, 
+                                                          fromUser=str(ConvertBinaryToUUID(lp.fromUser_uuid)), 
+                                                          timeCreated=lp.timeCreated, 
+                                                          latitude=lp.latitude, 
+                                                          longitude=lp.longitude, 
+                                                          weight=lp.weight,
+                                                          text=lp.text,
+                                                          url=lp.url)
+            clientPostListToReturn.append(clientPostToReturn.getOrderedDict())
+                
+        jsonString = json.dumps(clientPostListToReturn)
+            
+        # log and return on success   
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.GetLocal.REQUEST_SUCCESSFUL,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+            Const.DataCollection.ParamNames.LATITUDE: clientLatitude,
+            Const.DataCollection.ParamNames.LONGITUDE: clientLongitude,
+            Const.DataCollection.ParamNames.NUM_IMAGES_REQUESTED: clientNumPostsRequested,
+            Const.DataCollection.ParamNames.NUM_IMAGES_SERVED: len(list(localPosts)) })  
+                           
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    jsonString, 'application/json')
+    
+    except Exception as e:
+        # log and return on error
+        DataCollector.logServerError(e)
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.GetLocal.REQUEST_FAILED_SERVER_ERROR,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+            Const.DataCollection.ParamNames.LATITUDE: clientLatitude,
+            Const.DataCollection.ParamNames.LONGITUDE: clientLongitude,
+            Const.DataCollection.ParamNames.NUM_IMAGES_REQUESTED: clientNumPostsRequested,
+            Const.DataCollection.ParamNames.NUM_IMAGES_SERVED: 0 })  
+        
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.GetLocal.REQUEST_FAILED_SERVER_ERROR)
+
+#------------------------------------------------------------------------------
+# _GetBlockedUsersList
+# Returns a list of the UUIDs of the users that a particular user has blocked
+# on local.
+# 
+# params:
+#    clientUser - the client user object (django wrapper)
+# returns:
+#    list of the users, or a list with a zero if no users
+#------------------------------------------------------------------------------
+def _GetBlockedUsersList(clientUser):
+    
+    userBlocks = Block.objects.filter(blockerUser=clientUser) 
+    blockedUserList = []
+    for lub in userBlocks: 
+        blockedUserList.append(lub.blocked.id)
+    
+    # If the user has not blocked anyone, use a dummy block list
+    # MySQL does not like empty list
+    if not blockedUserList:
+        blockedUserList = [0]
+            
+    return blockedUserList
+
+#-------------------------------------------------------------------------------
+# _RunLocalAlgorithm
+# This is the local algo, the meat and potatoes of local.
+# 
+# params:
+#    clientID - the client's UUID
+#    latitude - clients lat.
+#    longitude - client's long.
+#    numOfPostsRequested - number of posts requested
+#    postsToExclude - list of posts that the client has already seen (so we can avoid these)
+#    blockedUsers - list of users this client has blocked on local
+# returns:
+#    list of localPost objects (django wrappers for localpost)
+#-------------------------------------------------------------------------------
+def _RunLocalAlgorithm(clientID, latitude, longitude, numOfPostsRequested, postsToExclude, blockedUsers):
+ 
+    localPosts = []
+    numOfQueries = 0
+    numOfPostsToGet = numOfPostsRequested # keeps track of how many more posts we need
+
+    # For each radius, query the database. Stop if we have what we need         
+    for radius in Const.Views.GetLocalPost.RADIUS_LIST:          
+        numOfQueries += 1
+
+        # Make the query with the radius
+        localpostResults = _QueryForLocalPosts(latitude=latitude,
+                                      longitude=longitude,
+                                      radius=radius,
+                                      postsToExclude=postsToExclude,
+                                      clientID=clientID,
+                                      blockedUsers=blockedUsers,
+                                      numOfPostsToGet=numOfPostsToGet,
+                                      excludeOwnPosts=settings.HIDE_OWN_LOCALPOSTS)
+        
+                  
+        # Add each post to the main list to return
+        for lp in localpostResults:
+            localPosts.append(lp)
+            numOfPostsToGet -= 1 # need one less post now
+            postsToExclude.append(lp.id) # add this post to the list to exclude, so it is not included in future queries
+     
+            # Leave the loop if we are done
+            if (numOfPostsToGet == 0):
+                break
+    
+
+    # If we still do not have all the posts, try querying without radius
+    if (numOfPostsToGet != 0):
+        numOfQueries += 1
+
+        # Make the query with no radius
+        localpostResults = _QueryForLocalPosts(latitude=latitude,
+                                      longitude=longitude,
+                                      radius=0,
+                                      postsToExclude=postsToExclude,
+                                      clientID=clientID,
+                                      blockedUsers=blockedUsers,
+                                      numOfPostsToGet=numOfPostsToGet,
+                                      excludeOwnPosts=settings.HIDE_OWN_LOCALPOSTS)
+
+        for lp in localpostResults:
+            localPosts.append(lp)
+            numOfPostsToGet -= 1 
+
+    return localPosts     
+
+#-------------------------------------------------------------------------------
+# Makes query for local posts and returns the results as a list of named tuples.
+#-------------------------------------------------------------------------------
+def _QueryForLocalPosts(latitude, longitude, radius, postsToExclude, clientID,
+                        blockedUsers, numOfPostsToGet, excludeOwnPosts):
+    
+    cursor = connection.cursor()
+
+    query = _GetLocalQuery(excludeOwnPosts=excludeOwnPosts, 
+                           checkRadius=(False if not radius else True))
+    
+    if (query.count('%s') == 8):
+        queryArgs = [latitude, 
+                    longitude, 
+                    radius, 
+                    Const.Views.GetLocalPost.DISTANCEUNIT, 
+                    postsToExclude, 
+                    clientID, 
+                    blockedUsers, 
+                    numOfPostsToGet]
+    else:
+        queryArgs = [latitude, 
+                    longitude, 
+                    radius, 
+                    Const.Views.GetLocalPost.DISTANCEUNIT, 
+                    postsToExclude, 
+                    blockedUsers, 
+                    numOfPostsToGet]        
+      
+    cursor.execute(query, queryArgs)
+    
+    results = Utils.FetchallAsNamedTuple(cursor)
+    return results
+
+#-------------------------------------------------------------------------------
+# _GetLocalQuery
+# Returns the appropriate database query as string, escaped with '%s' parameters.
+# To be used with the local algo.
+#-------------------------------------------------------------------------------
+def _GetLocalQuery(excludeOwnPosts, checkRadius):
+    if (excludeOwnPosts and checkRadius):
+        # Get all attributes including the weight and distance
+        # Exclude posts within a certain initial radius
+        # Exclude posts that have been seen
+        # Exclude posts that were authored by this user
+        # Exclude posts by people whom this user has blocked
+        # Limit to the amount of posts user wants
+        # Calculate the weight rating on each post
+        
+        query = """SELECT id, uuid as fromUser_uuid, latitude, longitude, timeCreated, text, url, weight, distance, arn
+                FROM (
+                    SELECT content.id, content.fromUser_id, users.uuid, lp.latitude, lp.longitude, content.timeCreated, lp.text, lp.arn, content.url,
+                    p.radius,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - content.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM JokrBackend_content_localpost AS lp
+                JOIN JokrBackend_postablecontent as content ON lp.cid_id = content.id
+                JOIN JokrBackend_content_user as users ON content.fromUser_id = users.id
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS radius, %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE lp.latitude
+                 BETWEEN p.latpoint  - (p.radius / p.distance_unit)
+                     AND p.latpoint  + (p.radius / p.distance_unit)
+                AND lp.longitude
+                 BETWEEN p.longpoint - (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                     AND p.longpoint + (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                AND lp.cid_id NOT IN %s
+                AND content.fromUser_id <> %
+                AND content.fromUser_id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+        
+    elif (excludeOwnPosts and not checkRadius):
+        # Get all attributes including the weight and distance
+        # No radius exclusion
+        # Exclude posts that have been seen
+        # Exclude posts that were authored by this user
+        # Exclude posts by people whom this user has blocked
+        # Limit to the amount of posts user wants
+        # Calculate the weight rating on each post     
+        query = """SELECT id, uuid as fromUser_uuid, latitude, longitude, timeCreated, text, url, weight, distance, arn
+                FROM (
+                    SELECT content.id, content.fromUser_id, users.uuid, lp.latitude, lp.longitude, content.timeCreated, lp.text, lp.arn, content.url,
+                    p.radius,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - content.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM JokrBackend_content_localpost AS lp
+                JOIN JokrBackend_postablecontent as content ON lp.cid_id = content.id
+                JOIN JokrBackend_content_user as users ON content.fromUser_id = users.id
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS radius, %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE lp.cid_id NOT IN %s
+                AND content.fromUser_id <> %
+                AND content.fromUser_id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+        
+    elif (not excludeOwnPosts and checkRadius):
+        # Get all attributes including the weight and distance
+        # Exclude posts within a certain initial radius
+        # Exclude posts that have been seen
+        # Include posts authored by this user
+        # Exclude posts by people whom this user has blocked
+        # Limit to the amount of posts user wants
+        # Calculate the weight rating on each post
+        query = """SELECT id, uuid as fromUser_uuid, latitude, longitude, timeCreated, text, url, weight, distance, arn
+                FROM (
+                    SELECT content.id, content.fromUser_id, users.uuid, lp.latitude, lp.longitude, content.timeCreated, lp.text, lp.arn content.url,
+                    p.radius,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - content.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM JokrBackend_content_localpost AS lp
+                JOIN JokrBackend_postablecontent as content ON lp.cid_id = content.id
+                JOIN JokrBackend_content_user as users ON content.fromUser_id = users.id
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS radius, %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE lp.latitude
+                 BETWEEN p.latpoint  - (p.radius / p.distance_unit)
+                     AND p.latpoint  + (p.radius / p.distance_unit)
+                AND lp.longitude
+                 BETWEEN p.longpoint - (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                     AND p.longpoint + (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                AND lp.cid_id NOT IN %s
+                AND content.fromUser_id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+
+    elif (not excludeOwnPosts and not checkRadius):
+        # Get all attributes including the weight and distance
+        # No radius exclusion
+        # Exclude posts that have been seen
+        # Include posts that were authored by this user
+        # Exclude posts by people whom this user has blocked
+        # Limit to the amount of posts user wants
+        # Calculate the weight rating on each post     
+        query = """SELECT id, uuid as fromUser_uuid, latitude, longitude, timeCreated, text, url, weight, distance, arn
+                FROM (
+                    SELECT content.id, content.fromUser_id, users.uuid, lp.latitude, lp.longitude, content.timeCreated, lp.text, lp.arn, content.url,
+                    p.radius,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(lp.latitude))
+                             * COS(RADIANS(p.longpoint - lp.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(lp.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - content.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM JokrBackend_content_localpost AS lp
+                JOIN JokrBackend_postablecontent as content ON lp.cid_id = content.id
+                JOIN JokrBackend_content_user as users ON content.fromUser_id = users.id
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS radius, %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE lp.cid_id NOT IN %s
+                AND content.fromUser_id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+        
+    return query  
+
+#------------------------------------------------------------------------------ 
+# This class is a wrapper for a LocalPost to be sent to the client. 
+#------------------------------------------------------------------------------ 
+class _GetLocalPostClientObject:
+    def __init__(self, postID, fromUser, timeCreated, latitude, longitude, weight, text, url, arn):
+        self.postID = postID
+        self.fromUser = fromUser
+        self.timeCreated = timeCreated
+        self.latitude = latitude
+        self.longitude = longitude
+        self.weight = weight
+        self.text = text
+        self.url = url
+        self.arn = arn
+        
+    # Returns an ordered dictionary of the LocalPostObject content. This is 
+    # necessary in order to properly json stringify the object.
+    def getOrderedDict(self):
+        import collections
+
+        dict = collections.OrderedDict()
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_ID] = self.postID
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_AUTHOR_ID] = self.fromUser
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_TIME] = self.timeCreated
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_LATITUDE] = self.latitude
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_LONGITUDE] = self.longitude
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_WEIGHT] = self.weight
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_TEXT] = self.text
+        dict[Const.Views.GetLocalPost.JsonResponseKey.POST_URL] = self.url
+        return dict
+        
+    

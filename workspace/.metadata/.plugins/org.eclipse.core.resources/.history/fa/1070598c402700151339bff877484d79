@@ -1,0 +1,19 @@
+#===============================================================================
+# View that lets a client check if he has any unread messages on the local feed.
+#
+# Nick Wrobel
+# Created: 7/9/15
+# Modified: 7/9/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.utils.dateformat import format
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from datetime import datetime
+from Boomerang.Models.LocalPostModel import LocalPost
+from Boomerang.Custom.LocalPostClientObject import LocalPostClientObject
+import math
+
+def GetLocalMessages(requestData):

@@ -1,0 +1,15 @@
+# /bin/bash
+# Restores all files from a backup
+# NOTE: this does a hard reset of all files. 
+# Any files that conflict will be overwritten
+
+echo "Are you sure you want to restore to this backup? (files will be overwritten)"
+read response
+
+if [ "$response" = "y" ]; then 
+  tar -xpvzf $1 -C /
+fi
+
+# Install the cron jobs from the cron file
+crontab -u nick /cron
+rm /cron

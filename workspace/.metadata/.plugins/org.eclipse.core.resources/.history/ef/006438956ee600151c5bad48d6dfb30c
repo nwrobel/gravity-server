@@ -1,0 +1,62 @@
+#===============================================================================
+# SubscribeLiveView
+# Subscribes a user to a live thread, GCM style
+#
+# Nick Wrobel
+# Created: 3/9/16
+# Modified: 3/9/16
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.DataCollection.DataCollector as DataCollector
+import JokrBackend.GCMManager as GCMManager
+import JokrBackend.DataCollection.QueryManager as QueryManager
+
+
+
+@csrf_exempt
+def SubscribeLive(requestData):
+    TAG = Const.Tags.Urls.SUBSCRIBE_LIVE
+        
+    securityProperties = RunThroughSecurityLayer(TAG, requestData)
+    if (not securityProperties.isSecure):
+        return securityProperties.httpResponse
+    
+    try:        
+        instanceID = securityProperties.jsonRequestData[Const.Views.SubscribeLive.JsonRequestKey.INSTANCE_ID]
+        threadID = securityProperties.jsonRequestData[Const.Views.SubscribeLive.JsonRequestKey.THREAD_ID]
+
+        # Check that the thread exists
+        if (not QueryManager.ContentIsOnline(threadID)):
+            DataCollector.UpdateURLHit(hitID=securityProperties.hitID, 
+                                   responseCode=Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND,
+                                   messageCode=Const.DataCollection.MessageCodes.SubscribeLive.THREAD_NOT_FOUND)
+                       
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK)
+
+        GCMManager.SubscribeUserToThread(instanceID, threadID)
+
+        # log and return on success          
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID, 
+                                   responseCode=Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+                                   messageCode=Const.DataCollection.MessageCodes.SubscribeLive.REQUEST_SUCCESSFUL)
+                       
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK)
+    
+    except Exception as e:
+        # log and return on error
+        DataCollector.logServerError(e)
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID, 
+                                   responseCode=Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR,
+                                   messageCode=Const.DataCollection.MessageCodes.SubscribeLive.REQUEST_FAILED_SERVER_ERROR)
+ 
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.SubscribeLive.REQUEST_FAILED_SERVER_ERROR)
+        
+
+
+
+

@@ -1,0 +1,11 @@
+from django.db import models
+
+
+class BlockAnalytics(models.Model):
+    timeCreated = models.IntegerField(default=None, null=False)
+    blockedUser = models.CharField(default=None, null=False, max_length=32)
+    blockerUser = models.CharField(default=None, null=False, max_length=32)
+
+    class Meta:
+        app_name = 'JokrBackend'
+        db_table = 'JokrBackend_LocalPosts'

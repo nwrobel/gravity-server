@@ -1,0 +1,4 @@
+import JokrBackend.Custom.Utils as Utils
+
+print(Utils.CreateSequentialUUID())
+print(type(Utils.CreateSequentialUUID()))

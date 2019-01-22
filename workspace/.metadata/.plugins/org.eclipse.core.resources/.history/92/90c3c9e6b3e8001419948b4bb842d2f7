@@ -1,0 +1,42 @@
+#===============================================================================
+# View for accepting some data from the client and creating a local post.
+# Accepts an image, a caption, and GPS coordinates.
+# Places this info, along with the IP address in the LocalPosts table in the db.
+# Saves the posted data to disk.
+#
+# Nick Wrobel, 4/21/15
+#===============================================================================
+
+from Boomerang.Models.LocalPostModel import LocalPost
+from django.http import HttpResponse
+import json
+from django.core.files.base import ContentFile
+
+# TODO: add checking for POST requests
+def UploadLocalPost(clientData):   
+    
+    if clientData.method == 'GET': 
+        return("This is an error, son")
+    
+        
+    # Decode the Json, create a dictionary
+    rawClientData = clientData.read()
+    clientJsonData = json.loads(rawClientData.decode())   
+    
+    # Create a new LocalPost and populate the fields from the Json
+    newPost = LocalPost()
+    newPost.ipAddress = clientData.META['REMOTE_ADDR']
+    newPost.latitude = clientJsonData['latitude']
+    newPost.longitude = clientJsonData['longitude']
+
+    # Save what we have in the database
+    newPost.save()
+       
+    # Use the ID that was set as the new filename,
+    # dump the image data in this file.
+    # The image data is assumed to be a base64 encoded string. Although
+    # it is bigger on disk, we avoid the overhead of binary convertions.  
+    newPost.image.save(str(newPost.id), ContentFile(clientJsonData['image']))
+    
+    # TODO: RETURN AN APPROPRIATE RESPONSE TO THE CLIENT IF ALL WENT WELL
+    return HttpResponse("You are talking to the server")

@@ -1,0 +1,10 @@
+#-------------------------------------------------------------------------------
+# GCMManger
+# Module to perform routines related to GCM
+# 
+# Nick Wrobel
+# Created: 3/9/16
+# Modified: 3/9/16
+#-------------------------------------------------------------------------------
+
+def SubscribeUserToTopic(instanceID, topicID):

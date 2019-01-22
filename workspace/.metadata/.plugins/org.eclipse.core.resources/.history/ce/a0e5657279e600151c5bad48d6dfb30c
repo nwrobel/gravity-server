@@ -1,0 +1,117 @@
+#===============================================================================
+# UploadReplyView
+# View that lets a client reply to a live thread
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 2/15/15
+#===============================================================================
+
+import simplejson as json
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+from django.conf import settings
+from JokrBackend.models import Thread, Reply
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.Custom.Utils as Utils
+import JokrBackend.DataCollection.DataCollector as DataCollector
+import JokrBackend.Security.RateLimiter as RateLimiter
+from JokrBackend.DataCollection import QueryManager
+import JokrBackend.GCMManager as GCMManager
+from JokrBackend.Views.Reply.GetReplyView import GetReplyClientObject
+
+
+@csrf_exempt
+def UploadReply(requestData):
+    TAG = Const.Tags.Urls.UPLOAD_REPLY
+     
+    securityProperties = RunThroughSecurityLayer(TAG, requestData)
+    if (not securityProperties.isSecure):
+        return securityProperties.httpResponse
+    
+    try:
+        clientUser = securityProperties.userObject
+        clientSession = securityProperties.userSession
+        clientThreadID = securityProperties.jsonRequestData[Const.Views.UploadReply.JsonRequestKey.THREAD_ID]
+        clientReplyText= securityProperties.jsonRequestData[Const.Views.UploadReply.JsonRequestKey.REPLY_TEXT]
+        clientReplyKey = securityProperties.jsonRequestData[Const.Views.UploadReply.JsonRequestKey.REPLY_URL]
+
+        # Moderation - check if this user is posting replies too fast
+        if (settings.RATE_LIMIT_LIVE and RateLimiter.UserReplyRateLimitExceeded(clientUser.id)):
+            DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                       responseCode=Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_TOO_MANY_REQUESTS, 
+                                       messageCode=Const.DataCollection.MessageCodes.UploadReply.RATE_LIMIT_EXCEEDED)  
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_TOO_MANY_REQUESTS, 
+                                                        Const.DataCollection.MessageCodes.UploadReply.RATE_LIMIT_EXCEEDED)
+        
+        # Find the parent thread to reply to in the DB  
+        threadToReplyTo = QueryManager.GetObjectByID(Thread, clientThreadID)
+        
+        if (not threadToReplyTo):
+            DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                       responseCode=Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND, 
+                                       messageCode=Const.DataCollection.MessageCodes.UploadReply.THREAD_NOT_FOUND) 
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND, 
+                                                        Const.DataCollection.MessageCodes.UploadReply.THREAD_NOT_FOUND)
+
+        # These fields are optional. Make sure that they go into the DB
+        # as an empty string if they are not present 
+        if (Utils.StringIsEmpty(clientReplyText)):
+            clientReplyText = ''
+        if (Utils.StringIsEmpty(clientReplyKey)):
+            clientReplyKey = ''
+
+        # Save the reply in the DB
+        newReply = Reply.objects.create(fromUser=clientUser,
+                             fromSession=clientSession,
+                             contentType=Const.Tags.ContentTypes.REPLY,
+                             parentThread=threadToReplyTo,
+                             text=clientReplyText,
+                             key=clientReplyKey)
+        
+        # Broadcast the reply out to this thread's subscribers using GCM
+        # Create the client reply object
+        newReplyClientObject = GetReplyClientObject(text=newReply.text, 
+                                                    time=newReply.timeCreated, 
+                                                    id=Utils.BinaryToUUID(newReply.id), 
+                                                    key=newReply.key) 
+        
+        # Turn it into JSON and send it off
+        googleResponseCode = GCMManager.BroadcastReplyToSubscribers(parentThreadID=clientThreadID,
+                                               newReplyJSON=newReplyClientObject.getDict()) 
+        
+        # Check the response code from google
+        if (googleResponseCode != Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK):
+                DataCollector.UpdateURLHit(hitID=securityProperties.hitID, 
+                                   responseCode=Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+                                   messageCode=Const.DataCollection.MessageCodes.UploadReply.GCM_BROADCAST_FAILED)
+                       
+                return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+                                                            Const.DataCollection.MessageCodes.UploadReply.GCM_BROADCAST_FAILED)
+        
+        
+        # log and return on success
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                    responseCode=Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                    messageCode=Const.DataCollection.MessageCodes.UploadReply.POST_SUCCESSFUL) 
+        
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    Const.DataCollection.MessageCodes.UploadReply.POST_SUCCESSFUL)
+    
+    except Exception as e:
+        DataCollector.logServerError(e)
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                    responseCode=Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                    messageCode=Const.DataCollection.MessageCodes.UploadReply.POST_FAILED_SERVER_ERROR)  
+        
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.UploadReply.POST_FAILED_SERVER_ERROR)
+
+
+
+
+

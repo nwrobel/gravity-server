@@ -1,0 +1,137 @@
+#===============================================================================
+# View for accepting some data from the client, creating a LocalPost out
+# of it, and then saving it into the database.
+#
+# Nick Wrobel, 6/9/15
+#===============================================================================
+
+from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+from django.http import HttpResponse
+from PIL import Image
+from io import BytesIO
+import logging
+import base64
+import gzip
+import json
+from Boomerang.Models.LocalPostModel import LocalPost
+             
+# Sets up the logging for this file
+# Note: all other logging config takes place in the settings files
+logger = logging.getLogger(__name__)
+         
+# CSRF requirement poses a problem, remove CSRF here.     
+@csrf_exempt                        
+def UploadLocalPost(requestData):
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+    clientIP = ''
+    decodedRequestData = ''
+    requestJsonData = ''
+    latitude = 0.0
+    longitude = 0.0
+    originalImgB64Bytes = ''
+    newImgBytesFileOutput = None 
+    originalImgGzBytes = ''
+    originalImgBytes = ''
+    newImgBytes = ''
+    newImgGzBytes = None
+    newImageB64Str = ''
+    newPost = None
+    
+    # RULE: if the local post was saved correctly, return a response 0
+    #       else return a -1
+    
+    # Try getting the client Ip. 
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.error("ULPV-E3: Error: client IP address not found in request data")
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != "POST":
+        logger.error("ULPV-E0: Client " + str(clientIP) + " sent a request using method other than POST")
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data 
+    decodedRequestData = requestData.read().decode()
+             
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.error("ULPV-E1: Client " + str(clientIP) + " had and error in parsing the json data.")
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        latitude = requestJsonData['latitude']
+        longitude = requestJsonData['longitude']
+        rotate = requestJsonData['rotation']
+        originalImgB64Bytes = requestJsonData['image']
+    except Exception: 
+        logger.error("ULPV-E2: Client " + str(clientIP) + " had an error in extracting the parsed Json data (are the key names right?)")
+        return HttpResponse(-1)
+   
+    # Create a new LocalPost and populate the fields from the Json
+    newPost = LocalPost()
+    newPost.ipAddress = clientIP
+    newPost.latitude = latitude
+    newPost.longitude = longitude
+     
+    # Process the image - Roatate based on the 'rotation' json value 
+    # Read in the original string, decode it and unzip it into a byte string        
+    newImgBytesFileOutput = BytesIO()
+    originalImgGzBytes = base64.b64decode(originalImgB64Bytes)
+    originalImgBytes = gzip.GzipFile(fileobj=BytesIO(originalImgGzBytes), mode='rb').read()
+  
+    # Open the byte string, perform the rotation using PIL, save the resulting
+    # image into a new byte string
+    newImgBytes = Image.open(BytesIO(originalImgBytes))
+    if rotate == '0':
+        newImgBytes = newImgBytes.rotate(90)
+    elif rotate == '1':
+        newImgBytes = newImgBytes.rotate(270)
+        
+    newImgBytes.save(newImgBytesFileOutput, format='JPEG')
+     
+     # Compress the new byte string, and base64 this compressed byte string
+    newImgGzBytes = BytesIO()
+    with gzip.GzipFile(fileobj=newImgGzBytes, mode='w') as f:
+        f.write(newImgBytesFileOutput.getvalue())
+     
+    newImgBytesFileOutput.close()
+     
+    newImageB64Str = base64.b64encode(newImgGzBytes.getvalue()).decode()
+    newImgGzBytes.close()
+
+ 
+    # Try to save what we have in the database.
+    # Save the post in the db, then try to write the image to disk 
+    # with the post ID as filename.
+    
+    # Note: the image is saved to disk as a gzipped image file that has been
+    # converted to a base64 string.
+    try:
+        # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            newPost.save()
+#             newPost.image.save(str(newPost.id), ContentFile(newImageB64Str))
+            newPost.image.save(str(newPost.id), ContentFile(originalImgB64Bytes))
+    except Exception:
+        logger.error("ULPV-E4: Client " + str(clientIP) + " has an error: json data loaded, but the post could not be saved into the DB (is json data the right type?)")
+        return HttpResponse(-1)
+
+    logger.info("ULPV-I0: client " + str(clientIP) + " local post was sent and saved successfully: lat: " 
+                + str(latitude) + ", long: " + str(longitude))
+    
+    
+    # If all went well, return a 0
+    return HttpResponse(0)

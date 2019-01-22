@@ -1,0 +1,11 @@
+from django.core.management import BaseCommand
+from JokrBackend.models import Session, OnlineContent
+
+class Command(BaseCommand): 
+#-------------------------------------------------------------------------------
+# handle
+# the 'main method'
+#-------------------------------------------------------------------------------
+    def handle(self, *args, **options): 
+        
+        

@@ -1,0 +1,85 @@
+#===============================================================================
+# BlockView
+# View that lets a client block another user on local feed.
+#
+# Nick Wrobel
+# Created: 7/16/15
+# Modified: 10/8/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import time
+from django.db import transaction
+from JokrBackend.Models.UserModel import User
+from JokrBackend.Models.LocalUserBlockModel import LocalUserBlock
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from  JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.Custom.Utils as Utils
+import JokrBackend.Analytics as Analytics
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+
+@csrf_exempt
+def Block(requestData):
+      
+    securityProperties = RunThroughSecurityLayer(Const.Views.Block.TAG, requestData)
+    if (not securityProperties.isSecure):
+        return HttpResponseFactory.MakeSecurityErrorHttpResponse(securityProperties)
+    
+    clientUser = securityProperties.clientUserObject
+    clientBlockUser = securityProperties.jsonRequestData[Const.Views.Block.JsonRequestKey.USER_TO_BLOCK_ID]
+    
+    # Block type is currently unused
+    clientBlockType = securityProperties.jsonRequestData[Const.Views.Block.JsonRequestKey.TYPE]
+    currentTime = time.time()
+    
+#------------------------------------------------------------------------------ 
+# Try to find the user to block in the DB
+
+    try:
+        blockedUser = User.objects.get(uuid=Utils.ConvertUUIDToBinary(clientBlockUser))
+    except Exception:
+        logger.error(Const.Views.Block.Messages.E000)
+        return HttpResponseFactory.MakeHttpResponse(422, Const.Views.Block.Messages.E000)
+    
+#------------------------------------------------------------------------------ 
+# Make sure that this block does not already exist
+    
+    try:
+        block = LocalUserBlock.objects.filter(blocker=clientUser, blocked=blockedUser)
+        if block:
+            logger.error(Const.Views.Block.Messages.E001)
+            return HttpResponseFactory.MakeHttpResponse(409, Const.Views.Block.Messages.E001)
+    except Exception:
+            logger.error(Const.Views.Block.Messages.E002)
+            return HttpResponseFactory.MakeHttpResponse(500, Const.Views.Block.Messages.E002)
+        
+#------------------------------------------------------------------------------ 
+# Save the block in the DB
+    
+    try:
+    # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            LocalUserBlock.objects.create(timeCreated=time.time(), 
+                                          blocker=clientUser, 
+                                          blocked=blockedUser)
+    except Exception:
+        logger.error(Const.Views.Block.Messages.E003)
+        return HttpResponseFactory.MakeHttpResponse(500, Const.Views.Block.Messages.E003)
+    
+    logger.info(Const.Views.Block.Messages.I000)
+    
+    Analytics.CreateAnalyticsForURL(Const.Views.Block.TAG, { 
+             Const.Analytics.ParamNames.CLOUD_CLIENT_ID: Utils.ConvertBinaryToUUID(clientUser.uuid),
+             Const.Analytics.ParamNames.CLOUD_EVENT_CATEGORY: 'Block',
+             Const.Analytics.ParamNames.CLOUD_EVENT_ACTION: clientBlockType,
+             Const.Analytics.ParamNames.TIME_CREATED: currentTime,
+             Const.Analytics.ParamNames.BLOCKER_USER: Utils.ConvertBinaryToUUID(clientUser.uuid),
+             Const.Analytics.ParamNames.BLOCKED_USER: Utils.ConvertBinaryToUUID(clientBlockUser.uuid) })
+   
+    return HttpResponseFactory.MakeHttpResponse(200, Const.Views.Block.Messages.I000)
+

@@ -1,0 +1,134 @@
+#===============================================================================
+# View that lets a client send a message to another user on the local feed.
+#
+# Nick Wrobel
+# Created: 7/9/15
+# Modified: 7/9/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from django.db import transaction
+from django.core.files.base import ContentFile
+from django.core.exceptions import ObjectDoesNotExist
+from Boomerang.Models.LocalPostModel import LocalPost
+from Boomerang.Models.UserModel import User
+from Boomerang.Models.LocalMessageModel import LocalMessage
+
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+@csrf_exempt
+def SendLocalMessage(requestData):
+    
+    messageRecipientClientId = ''
+    messageSenderClientId = ''
+    messageImage = ''
+    recipientUser = None
+    senderUser = None
+    newLocalMessage = None
+       
+#------------------------------------------------------------------------------ 
+# Client data validation and saving values   
+    # Try getting the client Ip.
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.error('SLMV-E3: Error: client IP address not found in request data')
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != 'POST':
+        logger.error('SLMV-E0: Client ' + str(clientIP) + ' sent a request using method other than POST')
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data
+    decodedRequestData = requestData.read().decode()
+  
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.error('SLMV-E1: Client ' + str(clientIP) + ' had an error in parsing the json data.')
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        messageSenderClientId = requestJsonData['from']
+        messageRecipientClientId = requestJsonData['to']
+        messageImage = requestJsonData['image']         
+            
+    except Exception: 
+        logger.exception('SLMV-E2: Client ' + str(clientIP) + ' had an error in extracting the parsed Json data (are the key names right?)')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Try to find the message sender in the DB
+# If the user ID does not exist, then create that user
+    try:
+        senderUser = User.objects.get(pk=messageSenderClientId)
+    except ObjectDoesNotExist:
+        senderUser = User.objects.create(pk=messageSenderClientId)
+    except Exception:
+        logger.error('ULPV-E3: Error finding/creating the sender user in the DB')
+        return HttpResponse(-1)
+    
+#------------------------------------------------------------------------------ 
+# Try to find the message receipient in the DB
+# If the user ID does not exist, then create that user
+    try:
+        senderUser = User.objects.get(pk=messageSenderClientId)
+    except ObjectDoesNotExist:
+        senderUser = User.objects.create(pk=messageSenderClientId)
+    except Exception:
+        logger.error('ULPV-E3: Error finding/creating the sender user in the DB')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Check the message recipient type and find the target user recipient
+
+    # Look for the user by UUID
+    if recipientType:
+        try:
+            recipientUser = User.objects.get(pk=messageRecipientClientId)
+        except Exception:
+            logger.error('SLMV-E4: Client ' + str(clientIP) + ' trying to send message: recipients UUID not found')
+            return HttpResponse(-1)
+    else:
+        try:
+            recipientUsersPost = LocalPost.objects.get(pk=messageRecipientClientId)
+            recipientUser = recipientUsersPost.userID
+        except Exception:
+            logger.error('SLMV-E5: Client ' + str(clientIP) + ' trying to send message: recipients localpost not found')
+            return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Save the message in the DB
+
+    newLocalMessage = LocalMessage()
+    newLocalMessage.toUser = recipientUser
+    newLocalMessage.fromUser = senderUser
+    
+    try:
+    # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            newLocalMessage.save()
+            newLocalMessage.image.save(str(newLocalMessage.id), ContentFile(messageImage))
+    except Exception:
+        logger.exception('SLMV-E7: Client ' + str(clientIP) + ' has an error: json data loaded, but the message could not be saved into the DB (is json data the right type?)')
+        return HttpResponse(-1)
+        
+            
+
+
+    

@@ -1,0 +1,113 @@
+#===============================================================================
+# GetReplyView
+# View that lets a client get all the current replies to a live thread.
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 11/6/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+import JokrBackend.Custom.Utils as Utils
+import simplejson as json
+from JokrBackend.Models.ContentModels import Thread
+from JokrBackend.Models.ContentModels import Reply
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.DataCollector as DataCollector 
+
+
+@csrf_exempt
+def GetReply(requestData):
+    TAG = Const.Views.GetReply.TAG
+        
+    securityProperties = RunThroughSecurityLayer(Const.Views.GetReply.TAG, requestData)
+    if (not securityProperties.isSecure):
+        return HttpResponseFactory.MakeSecurityErrorHttpResponse(securityProperties)
+    
+    try:
+        
+        clientUser = securityProperties.clientUserObject
+        clientThreadID = securityProperties.jsonRequestData[Const.Views.GetReply.JsonRequestKey.THREAD_ID]
+    
+
+        # Retrieve the thread and replies from the database
+        try:
+            thread = Thread.objects.get(pk=clientThreadID)
+            threadReplies = Reply.objects.filter(parentThread=thread)
+        except ObjectDoesNotExist:
+            DataCollector.logURL(TAG, { 
+                Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND,
+                Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.GetReply.THREAD_NOT_FOUND,
+                Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid) }) 
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND, 
+                                                        Const.DataCollection.MessageCodes.GetReply.THREAD_NOT_FOUND)
+        
+
+        # Package the thread replies and return
+        clientReplyListToReturn = []
+        for reply in threadReplies:
+            replyClientObject = GetReplyClientObject(name=reply.name, 
+                                                     text=reply.text, 
+                                                     time=reply.timeCreated, 
+                                                     id=reply.id, 
+                                                     url=reply.url)  
+            clientReplyListToReturn.append(replyClientObject.getOrderedDict())   
+              
+        jsonString = json.dumps(clientReplyListToReturn)
+
+        # log and return on success   
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.GetReply.REQUEST_SUCCESSFUL,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid) })
+                         
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    jsonString, 'application/json')
+    
+    except Exception as e:
+        DataCollector.logServerError(e)
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.GetReply.REQUEST_FAILED_SERVER_ERROR,
+            Const.DataCollection.ParamNames.FROM_USER: Utils.ConvertBinaryToUUID(clientUser.uuid) })
+
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.GetReply.REQUEST_FAILED_SERVER_ERROR)
+        
+        
+#------------------------------------------------------------------------------ 
+# This class is a wrapper for a live thread reply to be sent to client.
+#------------------------------------------------------------------------------ 
+class _GetReplyClientObject:
+    def __init__(self, name, text, time, id, url):
+        self.name = name
+        self.text = text
+        self.time = time
+        self.id = id
+        self.url = url
+        
+        # Format the optional fields - if they are null, use empty string
+        if Utils.StringIsEmpty(name):
+            self.name = ''
+        if Utils.StringIsEmpty(text):
+            self.text = ''
+        if Utils.StringIsEmpty(url):
+            self.url = ''
+        
+    # Returns an ordered dictionary. This is 
+    # necessary in order to properly json stringify the object.
+    def getOrderedDict(self):
+        import collections
+        
+        dict = collections.OrderedDict()
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_NAME] = self.name
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_TEXT] = self.text
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_TIME] = self.time
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_ID] = self.id
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_URL] = self.url
+        return dict
+    

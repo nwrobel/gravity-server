@@ -1,0 +1,323 @@
+#------------------------------------------------------------------------------ 
+# JokrBackend constants location
+#
+# Nick Wrobel
+# Created: 9/21/15
+# Modified: 10/7/15
+#------------------------------------------------------------------------------ 
+
+URL_CHAR_MAX = 250
+
+class Analytics:
+    ANALYTICS_UPLOAD_URL = 'http://www.google-analytics.com/collect'
+    class ParamNames:    
+        CLOUD_VERSION = 'v'
+        CLOUD_TRACKING_ID = 'tid'
+        CLOUD_CLIENT_ID = 'cid'
+        CLOUD_HIT_TYPE = 't'
+        CLOUD_EVENT_CATEGORY = 'ec'
+        CLOUD_EVENT_ACTION = 'ea' 
+        FROM_USER = 'fromUser'
+        TO_USER = 'toUser'
+        NEW_USER = 'newUser'
+        LATITUDE = 'latitude'
+        LONGITUDE = 'longitude' 
+        TIME_CREATED = 'timeCreated'
+        TIME_DIED = 'timeDied'
+        TIME_LAST_REPLY = 'timeOfLastReply'
+        HAS_TEXT = 'hasText'    
+        HAS_NAME = 'hasName'
+        HAS_TITLE = 'hasTitle'
+        HAS_IMAGE ='hasImage'
+        NUM_IMAGES_REQUESTED = 'numImagesRequested'
+        NUM_IMAGES_SERVED = 'numImagesServed'
+        NUM_MESSAGES_RECEIVED = 'numMessagesRecieved'
+        BLOCKED_USER = 'blockedUser'
+        BLOCKER_USER = 'blockerUser'
+        NUM_REPLIES = 'numReplies'
+        NUM_IMAGE_REPLIES = 'numImageReplies'
+        NUM_UNIQUE_POSTERS = 'numUniquePosters'
+        
+    class ParamValues:
+        CLOUD_VERSION = '1'
+        CLOUD_TRACKING_ID = 'UA-68211223-1'
+        CLOUD_HIT_TYPE = 'event'
+        
+    class Messages:
+        I000 = 'I000: Analytics sent successfully: %s'
+        
+class Headers:
+    USERID_HEADER_NAME = 'HTTP_X_CLIENT_USERID' # Translates to 'X-Client-UserID'
+
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR THE VIEWS
+
+class Views:        
+    class UploadLocalPost:
+        class Messages:
+            W000 = 'W000: Warning: too many posts from this client within timeframe'
+            E002 = 'E002: Error writing to the database'
+            I000 = 'I000: Localpost saved successfully'
+        class JsonRequestKey:
+            LATITUDE = 'latitude'
+            LONGITUDE = 'longitude'
+            TEXT = 'text'
+            URL = 'url'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.LATITUDE, 
+                           JsonRequestKey.LONGITUDE,
+                           JsonRequestKey.TEXT, 
+                           JsonRequestKey.URL]
+        MAX_POSTS_WITHIN_TIMEFRAME = 10
+        TIMEFRAME_MINUTES = 10
+        TEXT_CHAR_MAX = 500
+        TAG = 0
+        
+    class GetLocalPost:
+        class Messages:
+            E001 = 'E001: Error retrieving the users block list'
+            E002 = 'E002: Error querying the database'
+            E003 = 'E003: Error serializing localPosts'
+            W000 = 'W000: Warning: not enough localPosts in the DB for the client'
+            I000 = 'I000: Localposts checked/delivered successfully'
+            I001 = 'I001: Local algorithm run successfully'
+        class JsonRequestKey:
+            LATITUDE = 'latitude'
+            LONGITUDE = 'longitude'
+            SEEN = 'seen'
+            COUNT = 'count'
+        class JsonResponseKey:
+            POST_ID = 'id'
+            POST_AUTHOR_ID = 'fromUser'
+            POST_TIME = 'time'
+            POST_LATITUDE = 'latitude'
+            POST_LONGITUDE = 'longitude'
+            POST_WEIGHT = 'weight'
+            POST_TEXT = 'text'
+            POST_URL = 'url'      
+        REQUIRED_PARAMS = [JsonRequestKey.LATITUDE,
+                           JsonRequestKey.LONGITUDE,
+                           JsonRequestKey.SEEN,
+                           JsonRequestKey.COUNT]
+        RADIUS_LIST = [50, 200, 1000] # Radiuses to query by
+        DISTANCEUNIT = 69.172 # Num. of miles in one degree of lat/long
+        TAG = 1
+        
+    class UploadMessage:
+        class Messages:
+            E000 = 'E000: Error finding the sender/recipient in the DB'
+            E001 = 'E001: Error writing to the database'
+            I000 = 'I000: Message queued successfully'      
+        class JsonRequestKey:
+            TO_USER_ID = 'to'
+            TEXT = 'text'
+            URL = 'url'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.TO_USER_ID, 
+                           JsonRequestKey.TEXT,
+                           JsonRequestKey.URL]
+        TEXT_CHAR_MAX = 500
+        TAG = 2
+        
+    class GetMessage:
+        class Messages:
+            E000 = 'E000: Error reading the database or serializing messages'
+            E001 = 'E001: Error deleting sent messages'
+            I000 = 'I000: Messages checked/sent successfully'
+        class JsonRequestKey:
+            pass
+        class JsonResponseKey:
+            SENDER_USER_ID = 'fromUser'
+            MESSAGE_TIME = 'time'
+            MESSAGE_TEXT = 'text'
+            MESSAGE_URL = 'url' 
+        REQUIRED_PARAMS = []
+        TAG = 3
+                
+    class UploadThread:
+        class Messages:
+            E000 = 'E000: Error while checking OPs thread status'
+            E001 = 'E001: Error writing to the db'
+            W000 = 'W000: Warning: OP has too many active threads'
+            I000 = 'I000: Thread created successfully'
+        class JsonRequestKey:
+            BOARD_ID = 'boardID'
+            THREAD_TITLE = 'title'
+            THREAD_NAME = 'name'
+            THREAD_TEXT = 'text'
+            THREAD_URL = 'url'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_TITLE,
+                           JsonRequestKey.THREAD_NAME,
+                           JsonRequestKey.THREAD_TEXT,
+                           JsonRequestKey.THREAD_URL]
+        THREAD_LIMIT = 10
+        TITLE_CHAR_MAX = 100
+        NAME_CHAR_MAX = 100
+        TEXT_CHAR_MAX = 500
+        OP_THREAD_LIMIT = 1
+        TAG = 4
+        
+    class GetThread:
+        class Messages:
+            E000 = 'E000: Error retrieving the threads from this board'
+            E001 = 'E001: Error reading the db or serializing'
+            I000 = 'Thread info delivered successfully'
+        class JsonRequestKey:
+            BOARD_ID = 'boardID'
+        class JsonResponseKey:
+            THREAD_ORDER = 'order'
+            THREAD_ID = 'id'
+            THREAD_TITLE = 'title'
+            THREAD_NAME = 'name'
+            THREAD_TEXT = 'text'
+            THREAD_TIME = 'time'
+            THREAD_REPLY_COUNT = 'replies'
+            THREAD_UNIQUE_POSTERS_COUNT = 'uniq'
+            THREAD_URL = 'url'
+        REQUIRED_PARAMS = []
+        TAG = 5
+        
+    class UploadReply:
+        class Messages:
+            E000 = 'E000: Error finding the target thread in the DB'
+            E001 = 'E001: Error during the unique user check'
+            E003 = 'E003: Error writing to the db'
+            I000 = 'I000: Reply created successfully'
+            W000 = 'W000: Warning: too many replies from this client within timeframe'
+        class JsonRequestKey:
+            THREAD_ID = 'threadID'
+            REPLY_NAME = 'name'
+            REPLY_TEXT = 'text'
+            REPLY_URL = 'url'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_ID,
+                           JsonRequestKey.REPLY_NAME,
+                           JsonRequestKey.REPLY_TEXT,
+                           JsonRequestKey.REPLY_URL]
+        MAX_REPLIES_WITHIN_TIMEFRAME = 10
+        TIMEFRAME_MINUTES = 10
+        NAME_CHAR_MAX = 100
+        TEXT_CHAR_MAX = 250
+        TAG = 6
+                
+    class GetReply:
+        class Messages:
+            E000 = 'E000: Error finding the target thread and/or its replies in the DB'
+            E001 = 'E001: Error reading the db or serializing'
+            I000 = 'Thread replies delivered successfully'
+        class JsonRequestKey:
+            THREAD_ID = 'threadID'
+        class JsonResponseKey:
+            REPLY_ID = 'id'
+            REPLY_NAME = 'name'
+            REPLY_TEXT = 'text'
+            REPLY_TIME = 'time'
+            REPLY_URL = 'url'
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_ID]
+        TAG = 7
+        
+    class Block:
+        class Messages:
+            E000 = 'E000: Error finding the user to block in the DB'
+            E001 = 'E001: This user-user block already exists'
+            E002 = 'E002: Error reading the db'
+            E003 = 'E003: Error writing to the db'
+            I000 = 'I000: User block successful'
+        class JsonRequestKey:
+            USER_TO_BLOCK_ID = 'block'
+            TYPE = 'type'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.USER_TO_BLOCK_ID,
+                           JsonRequestKey.TYPE]
+        TAG = 8
+        
+    class CreateUser:        
+        class Messages:
+            E000 = 'E000: Error creating new user'
+            I000 = 'I000: New user created successfully'   
+        class JsonRequestKey:
+            pass
+        class JsonResponseKey:
+            USER_ID = 'id'       
+        REQUIRED_PARAMS = []
+        TAG = 9
+        
+    class Handler404:
+        TAG = 10
+    
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR HTTP RESPONSE FACTORY (messages and stuff)
+
+class HttpResponseFactory:
+    class SecurityHttpResponse:
+        E_404 = '404 not found'
+        E_BadClientID = 'Bad client ID, request another or get your shit together ;)'
+        E_BadRequestMethod = 'Bad request method'
+        E_BadContentType = 'Bad content-type (must be application/json)'
+        E_MalformedJson = 'Bad request (could be due to malformed json data)'
+        E_BadSemantics = """Request could not be processed. This could be caused by 
+            invalid data, invalid json parameters, or the wrong number of json parameters"""
+        
+    class HttpResponse:
+        E_GeneralError = 'General internal server error'
+        E_DatabaseReadError = 'Error reading from the database'
+        E_DatabaseWriteError = 'Error writing to the database'
+        I_Success = 'Operation completed successfully'
+        
+
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR THE SECURITY LAYER
+
+class SecurityLayer:
+    class Messages:
+        # use %s, and then later pass the URL name so we know for what URL the error occured
+        W000 = 'W000: %s: 404 occured'
+        W001 = 'W001: %s: Bad HTTP request method' 
+        W002 = 'W002: %s: Bad content-type'
+        W003 = 'W003: %s: Client uuid header not present'
+        W004 = 'W004: %s: Bad client uuid header value'
+        W005 = 'W005: %s: Malformed json data'       
+        W006 = 'W006: %s: Wrong # of json params'
+        W007 = 'W007: %s: Invalid json params'       
+        W008 = 'W008: %s: Data validation fail'       
+       
+#-------------------------------------------------------------------------------
+# GetUrlNameFromTag
+# Top teir autism that returns the URL name string given the tag.
+# There has got to be a better way to do this
+# 
+# params:
+#    urlTag - the url tag
+# returns:
+#    the name of the url
+#------------------------------------------------------------------------------ 
+def GetUrlNameFromTag(urlTag):
+    if (urlTag == 0):
+        return 'UploadLocalPost'
+    elif (urlTag == 1):
+        return 'GetLocalPost'
+    elif (urlTag == 2):
+        return 'UploadMessage'
+    elif (urlTag == 3):
+        return 'GetMessage'
+    elif (urlTag == 4):
+        return 'UploadThread'
+    elif (urlTag == 5):
+        return 'GetThread'
+    elif (urlTag == 6):
+        return 'UplodReply'
+    elif (urlTag == 7):
+        return 'GetReply'
+    elif (urlTag == 8):
+        return 'Block'
+    elif (urlTag == 9):
+        return 'CreateUser'
+    elif (urlTag == 10):
+        return 'Handler404'
+    

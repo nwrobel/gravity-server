@@ -1,0 +1,12 @@
+from django.db import models
+import JokrBackend.Constants as Const
+
+class LocalPost(models.Model):
+    timeCreated = models.IntegerField(default=None, null=False)
+    userIP = models.GenericIPAddressField(protocol='both', unpack_ipv4=False, default=None, null=False)
+    fromUser = models.ForeignKey(User, default=None, null=False)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    text = models.CharField(default=None, null=False, max_length=Const.Views.UploadLocalPost.TEXT_CHAR_MAX)
+    url = models.CharField(default=None, null=False, max_length=Const.URL_CHAR_MAX)
+

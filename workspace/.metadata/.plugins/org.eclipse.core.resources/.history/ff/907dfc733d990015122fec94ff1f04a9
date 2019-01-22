@@ -1,0 +1,88 @@
+#===============================================================================
+# BlockView
+# View that lets a client block another user on local feed.
+#
+# Nick Wrobel
+# Created: 7/16/15
+# Modified: 11/6/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import transaction
+from JokrBackend.Models.ContentModels import User
+from JokrBackend.Models.ModerationModels import Block
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from  JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.Custom.Utils as Utils
+from JokrBackend.Models import ModerationModels
+import JokrBackend.DataCollector as DataCollector
+
+
+@csrf_exempt
+def Block(requestData):
+    
+    TAG = Const.Views.Block.TAG
+    
+    securityProperties = RunThroughSecurityLayer(Const.Views.Block.TAG, requestData)
+    if (not securityProperties.isSecure):
+        return HttpResponseFactory.MakeSecurityErrorHttpResponse(securityProperties)
+    
+    try:
+        
+        clientUser = securityProperties.clientUserObject
+        clientBlockUser = securityProperties.jsonRequestData[Const.Views.Block.JsonRequestKey.USER_TO_BLOCK_ID]
+        
+        # Try to find the user to block in the Db
+        try:
+            blockedUser = User.objects.get(uuid=Utils.ConvertUUIDToBinary(clientBlockUser))
+        except ObjectDoesNotExist:
+            DataCollector.logURL(TAG, { 
+                Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_UNPROCESSABLE_ENTITY,
+                Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.ModerationBlock.TARGET_USER_NOT_FOUND,
+                Const.DataCollection.ParamNames.BLOCKED_USER: clientBlockUser,
+                Const.DataCollection.ParamNames.BLOCKED_USER: Utils.ConvertBinaryToUUID(clientUser.uuid)  })
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_UNPROCESSABLE_ENTITY, 
+                                                        Const.DataCollection.MessageCodes.ModerationBlock.TARGET_USER_NOT_FOUND)
+    
+        # Make sure that this block does not already exist
+        block = ModerationModels.Block.objects.filter(blockerUser=clientUser, blockedUser=blockedUser)
+        if block:
+            DataCollector.logURL(TAG, { 
+                Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_CONFLICT,
+                Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.ModerationBlock.BLOCK_EXISTS,
+                Const.DataCollection.ParamNames.BLOCKED_USER: clientBlockUser,
+                Const.DataCollection.ParamNames.BLOCKED_USER: Utils.ConvertBinaryToUUID(clientUser.uuid)  })
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_CONFLICT, 
+                                                        Const.DataCollection.MessageCodes.ModerationBlock.BLOCK_EXISTS)
+
+        
+        # Save the block in the DB
+        # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            ModerationModels.Block.objects.create(blockerUser=clientUser, blockedUser=blockedUser)
+    
+        # log and return on success
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.ModerationBlock.REQUEST_SUCCESSFUL,
+            Const.DataCollection.ParamNames.BLOCKED_USER: clientBlockUser,
+            Const.DataCollection.ParamNames.BLOCKER_USER: Utils.ConvertBinaryToUUID(clientUser.uuid)  })        
+   
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    Const.DataCollection.MessageCodes.ModerationBlock.REQUEST_SUCCESSFUL)
+        
+        
+    except Exception as e:
+        DataCollector.logServerError(e)
+        DataCollector.logURL(TAG, { 
+            Const.DataCollection.ParamNames.RESPONSE_CODE: Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR,
+            Const.DataCollection.ParamNames.MESSAGE_CODE: Const.DataCollection.MessageCodes.ModerationBlock.REQUEST_FAILED_SERVER_ERROR,
+            Const.DataCollection.ParamNames.BLOCKED_USER: clientBlockUser,
+            Const.DataCollection.ParamNames.BLOCKED_USER: Utils.ConvertBinaryToUUID(clientUser.uuid)  }) 
+        
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.ModerationBlock.REQUEST_FAILED_SERVER_ERROR)

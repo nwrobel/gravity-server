@@ -1,0 +1,271 @@
+#===============================================================================
+# View that takes some client request data for some localPosts, pulls 
+# LocalPosts from the database, and sends them to the client.
+#
+# Nick Wrobel
+# Created: 5/23/15
+# Modified: 7/10/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.utils.dateformat import format
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from datetime import datetime
+from Boomerang.Models.LocalPostModel import LocalPost
+from Boomerang.Custom.LocalPostClientObject import LocalPostClientObject
+import math
+ 
+#------------------------------------------------------------------------------ 
+# CONSTANTS
+    
+# Radiuses in which to look for localPosts, in miles
+RADIUS1 = 50
+RADIUS2 = 200
+RADIUS3 = 1000
+# Num. of miles in one degree of lat/long
+DISTANCEUNIT = 69.172
+    
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+# GetLocalPosts
+# Function to do the main work of the view
+@csrf_exempt
+def GetLocalPosts(requestData):
+  
+    decodedRequestData = '' # Decoded string of the request body
+    requestJsonData = None # Dictionary of the Json request data 
+    numPostsRequested = 0 # Number of images the client wants
+    clientLatitude = 0.0 # Client GPS latitude
+    clientLongitude = 0.0 # Client GPS longitude
+    clientViewedPosts = [] # List of IDs of images the client has seen
+    clientUserId = ''
+    clientIP = '' # Client's IP address
+    imgContent = '' # Temp variable for the image string that is read out
+    clientPostToReturn = None # Instance of LocalPostClientObject custom class
+    clientPostListToReturn = [] # List of these instances (one for each post)
+    localPosts = [] # List of the final localPosts results set
+    localPostsTmp = [] # List of a temp localPosts results set
+    numOfPostsToGet = 0 # Max number of posts the database should look for
+    postsToExclude = [] # List of post ID's to exclude from the db results set
+    notEnoughPosts = False; # Indicates there was not enough localposts in the db for the client's request
+    numOfQueries = 0 # Num. of queries used to get the client's result (for logging)
+    jsonString = '' # The final Json string sent back to the client
+ 
+#------------------------------------------------------------------------------ 
+# Client data validation and saving values   
+
+    # Try getting the client Ip.
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.error('GLPV-E3: Error: client IP address not found in request data')
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != 'POST':
+        logger.error('GLPV-E0: Client ' + str(clientIP) + ' sent a request using method other than POST')
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data
+    decodedRequestData = requestData.read().decode()
+  
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.error('GLPV-E1: Client ' + str(clientIP) + ' had an error in parsing the json data.')
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        numPostsRequested = numOfPostsToGet = requestJsonData['count']
+        clientLatitude = requestJsonData['latitude']
+        clientLongitude = requestJsonData['longitude']
+        clientViewedPosts = postsToExclude = requestJsonData['seen']
+        
+        # If the list images the client has seen is empty,
+        # set the list to be non-empty with a dummy value of 0.
+        # This prevents the query from breaking.
+        if not clientViewedPosts:
+            clientViewedPosts = postsToExclude = [0]
+      
+    except Exception: 
+        logger.exception('GLPV-E2: Client ' + str(clientIP) + ' had an error in extracting the parsed Json data (are the key names right?)')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Query the DB
+
+    # Query the database - form the query
+    # This gets the localposts from the db within a certain radius
+    # of a given lat. and long. point. It excludes posts that have 
+    # an ID in a given client 'seen' list.
+    query = """SELECT id, latitude, longitude, timeCreated, image, weight, distance
+                FROM (
+                    SELECT z.id, z.latitude, z.longitude, z.timeCreated, z.image,
+                    p.radius,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(z.latitude))
+                             * COS(RADIANS(p.longpoint - z.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(z.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(z.latitude))
+                             * COS(RADIANS(p.longpoint - z.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(z.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - z.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM Boomerang_localpost AS z
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS radius,      %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE z.latitude
+                 BETWEEN p.latpoint  - (p.radius / p.distance_unit)
+                     AND p.latpoint  + (p.radius / p.distance_unit)
+                AND z.longitude
+                 BETWEEN p.longpoint - (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                     AND p.longpoint + (p.radius / (p.distance_unit * COS(RADIANS(p.latpoint))))
+                AND z.id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+    
+    # Version of the above query, without performing checks on a radius     
+    queryNoRadius = """SELECT id, latitude, longitude, timeCreated, image, weight, distance
+                FROM (
+                    SELECT z.id, z.latitude, z.longitude, z.timeCreated, z.image,
+                     p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(z.latitude))
+                             * COS(RADIANS(p.longpoint - z.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(z.latitude)))) AS distance,
+                    (POW(10,7) / (2 * POW(                                      
+                    p.distance_unit
+                             * DEGREES(ACOS(COS(RADIANS(p.latpoint))
+                             * COS(RADIANS(z.latitude))
+                             * COS(RADIANS(p.longpoint - z.longitude))
+                             + SIN(RADIANS(p.latpoint))
+                             * SIN(RADIANS(z.latitude))))                   
+                    , 2)                   
+                    + 1.7 * ((UNIX_TIMESTAMP() - z.timeCreated) / 60.0)                   
+                    )) as weight
+                    FROM Boomerang_localpost AS z
+                JOIN (   /* these are the query parameters */
+                    SELECT  %s  AS latpoint,  %s AS longpoint,
+                            %s AS distance_unit
+                ) AS p ON 1=1
+              WHERE z.id NOT IN %s
+             ) AS d
+             ORDER BY weight DESC
+             LIMIT %s"""
+    
+    # Make the query using parameters, save the results set
+    # Try with increasing radius until we find what client needs
+    try:      
+        # Query 1 
+        localPostsTmp = LocalPost.objects.raw(query, [clientLatitude, clientLongitude, RADIUS1, DISTANCEUNIT, postsToExclude, numOfPostsToGet])
+        for lpt in localPostsTmp:
+            localPosts.append(lpt)
+        numOfQueries += 1
+      
+        # Check if we need more.
+        # If so, save the results, update clientViewedImages (images to ignore),
+        # update the number of posts to look for, and query again
+        if len(list(localPosts)) < numPostsRequested:           
+            for lpt in localPostsTmp:
+                postsToExclude.append(lpt.id)
+            numOfPostsToGet = numOfPostsToGet - len(list(localPostsTmp))
+            
+            #Query 2
+            localPostsTmp = LocalPost.objects.raw(query, [clientLatitude, clientLongitude, RADIUS2, DISTANCEUNIT, postsToExclude, numOfPostsToGet])
+            for lpt in localPostsTmp:
+                localPosts.append(lpt)
+            numOfQueries += 1
+           
+            # Check if we need more.
+            # If so, save the results, update clientViewedImages (images to ignore),
+            # update the number of posts to look for, and query again
+            if len(list(localPosts)) < numPostsRequested:                           
+                for lpt in localPostsTmp:
+                    postsToExclude.append(lpt.id)
+                numOfPostsToGet = numOfPostsToGet - len(list(localPostsTmp))
+            
+                #Query 3
+                localPostsTmp = LocalPost.objects.raw(query, [clientLatitude, clientLongitude, RADIUS3, DISTANCEUNIT, postsToExclude, numOfPostsToGet])
+                for lpt in localPostsTmp:
+                    localPosts.append(lpt)
+                numOfQueries += 1
+                            
+                # Check if we need more.
+                # If so, save the results, update clientViewedImages (images to ignore),
+                # update the number of posts to look for, and query again
+                if len(list(localPosts)) < numPostsRequested:                           
+                    for lpt in localPostsTmp:
+                        postsToExclude.append(lpt.id)
+                    numOfPostsToGet = numOfPostsToGet - len(list(localPostsTmp)) 
+            
+                    #Query 4
+                    localPostsTmp = LocalPost.objects.raw(queryNoRadius, [clientLatitude, clientLongitude, DISTANCEUNIT, postsToExclude, numOfPostsToGet])  
+                    for lpt in localPostsTmp:
+                        localPosts.append(lpt)
+                    numOfQueries += 1
+                        
+                    # Check. If we still don't have enough images, send what we have to the client 
+                    # and indicate out of images
+                    if len(list(localPosts)) < numPostsRequested:   
+                        notEnoughPosts = True;
+
+    except Exception:
+        logger.exception('GLPV-E4: Client ' + str(clientIP) + ' had an error querying the database table: info-> lat: ' 
+                     + str(clientLatitude) + ', long:' + str(clientLongitude) + ', numImages: ' + str(numPostsRequested))
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Package the localPosts
+
+    # Iterate over the results set. Make 'LocalPostClientObject' out of each result
+    # Add these objects to a list as a dictionary. Json stringify the whole list,
+    # using simplejson.
+    try:  
+        for lp in localPosts:
+            lp.image.open(mode='r')
+            imgContent = lp.image.read()
+            lp.image.close()
+            clientPostToReturn = LocalPostClientObject(lp.id, str(lp.fromUser.userID), lp.timeCreated, lp.latitude, lp.longitude, imgContent.decode(), lp.weight)
+            clientPostListToReturn.append(clientPostToReturn.getOrderedDict())
+                
+        jsonString = json.dumps(clientPostListToReturn)
+    except Exception:
+        logger.exception('GLPV-E5: Client ' + str(clientIP) + ' had error: Database queried, but there was'
+                    + ' an error pulling the clients requested data and forming json out of it.') 
+        return HttpResponse(-1)
+        
+    logger.info('GLPV-I0: Client ' + str(clientIP) + ' looking for ' + str(numPostsRequested) + ' LocalPosts near lat: ' 
+                + str(clientLatitude) + ', long: ' + str(clientLongitude) + '; received ' + str(len(list(localPosts))) 
+                + ' LocalPosts successfully (' + str(numOfQueries) + ' queries)') 
+    
+    if notEnoughPosts: 
+        logger.info('GLPV-W0: Warning: Client ' + str(clientIP) + ' did not get all the posts he requested' 
+         + ' because the database did not have enough unseen posts') 
+                   
+    return HttpResponse(jsonString, content_type='application/json')
+   
+
+    

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;JokrBackend/JokrBackend/JokrBackend/Custom/ModelFields&apos;" deleteContents="false" description="Delete resource &apos;JokrBackend/JokrBackend/JokrBackend/Custom/ModelFields&apos;" element1="/JokrBackend/JokrBackend/JokrBackend/Custom/ModelFields" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1446863018830"/>
+</session>

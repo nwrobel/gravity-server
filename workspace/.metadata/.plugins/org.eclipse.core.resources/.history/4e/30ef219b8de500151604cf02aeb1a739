@@ -1,0 +1,459 @@
+#------------------------------------------------------------------------------ 
+# JokrBackend constants location
+#
+# Nick Wrobel
+# Created: 9/21/15
+# Modified: 11/15/15
+#------------------------------------------------------------------------------ 
+
+SECONDS_IN_HOUR = 3600
+SECONDS_IN_DAY = 86400
+import JokrBackend.Custom.Utils
+
+class Scripts:
+    class Moderation:
+        class ArgNames:
+            MODTOP_RATE = 'rate'
+            MODTOP_TYPE = 'type'
+            MODUSER_ACTION_DISPLAY = 'display'
+            MODUSER_ACTION_BAN = 'ban'
+            MODUSER_ACTION_SEARCH = 'search'
+
+class Headers:
+    USERID_HEADER_NAME = 'HTTP_X_CLIENT_USERID' # Translates to 'X-Client-UserID'
+    SESSION_TOKEN_HEADER_NAME = 'HTTP_X_CLIENT_SESSIONTOKEN'
+    
+class Tags:
+    class Urls:
+        HANDLER_404 = -1
+        UPLOAD_LOCAL = 0
+        GET_LOCAL = 1
+        UPLOAD_MESSAGE = 2
+        GET_MESSAGE = 3
+        UPLOAD_LIVE = 4
+        GET_LIVE = 5
+        UPLOAD_REPLY = 6
+        GET_REPLY = 7
+        MODERATION_BLOCK = 8
+        SECURITY_CREATE = 9
+        MODERATION_REPORT = 10
+        SECURITY_GETBANINFO = 100
+        SECURITY_LOGIN = 101
+        ANALYTICS_FEEDBACK = 102
+    class Events:
+        PRUNE_LOCALPOSTS = 11
+        PRUNE_MESSAGES = 12
+        PRUNE_STATIC_CONTENT = 13
+        PRUNE_THREAD = 14
+        SERVER_NOTIFICATION = 15
+        PRUNE_SESSION_TOKENS = 16
+    class ContentTypes:
+        MESSAGE = 'MS'
+        LOCALPOST = 'LP'
+        THREAD = 'TH'
+        REPLY = 'RE'
+    class ModActions:
+        CONTENT_OK = 'OK'
+        CONTENT_DELETED = 'DEL'
+        REVIEW_PENDING = 'PEN'
+        IGNORED = 'IGN'
+    class NotificationDeliveryTypes:
+        TEXT = 'text'
+        EMAIL = 'email'
+    class NotificationTypes:
+        SERVER_ERROR = 'servErr'
+        
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR THE DATABASE 
+class Database:
+    class TableNames:
+        class Content:
+            ONLINE = 'Gravity_content_online'
+            ONLINE_LOCALPOST = 'Gravity_content_online_localpost' 
+            ONLINE_MESSAGE = 'Gravity_content_online_message' 
+            ONLINE_THREAD = 'Gravity_content_online_thread' 
+            ONLINE_REPLY =  'Gravity_content_online_reply'        
+            ARCHIVED = 'Gravity_content_archived'
+            ARCHIVED_LOCALPOST = 'Gravity_content_archived_localpost'
+            ARCHIVED_MESSAGE = 'Gravity_content_archived_message'
+            ARCHIVED_THREAD = 'Gravity_content_archived_thread'
+            ARCHIVED_REPLY = 'Gravity_content_archived_reply'                     
+        class Moderation:
+            BLOCK = 'Gravity_moderation_block'
+            REPORT = 'Gravity_moderation_report'
+            MOD_ACTION = 'Gravity_moderation_modAction'
+            BAN = 'Gravity_moderation_ban'           
+        class Security:
+            SESSION = 'Gravity_security_session'
+            USER = 'Gravity_security_user'
+            HIT = 'Gravity_security_hit'
+            HIT_SECURITY_ERROR = 'Gravity_security_hit_securityError'
+        class Logging:
+            ERROR = 'Gravity_logging_error'   
+            THREAD_PRUNED = 'Gravity_logging_event_threadPruned'
+            LOCALPOSTS_PRUNED = 'Gravity_logging_event_localpostsPruned'
+            MESSAGES_PRUNED = 'Gravity_logging_event_messagesPruned'
+            STATIC_CONTENT_PRUNED = 'Gravity_logging_event_staticContentPruned'
+            NOTIFICATION_SENT = 'Gravity_logging_event_notificationSent'    
+        class Analytics:
+            FEEDBACK = 'Gravity_analytics_feedback'      
+        NOTIFICATION_TEMP_TIME_LAST_SENT = 'Gravity_notification_timeLastSent'
+    class MaxLengths:
+        S3_KEY = 36
+        UUID = 32
+        MESSAGE_CODE = 10
+        CONTENT_TYPE = 2
+        AWS_ARN = 256
+        class Content:
+            LOCALPOST_TEXT = 500
+            MESSAGE_TEXT = 500
+            THREAD_TITLE = 100
+            THREAD_NAME = 100
+            THREAD_TEXT = 500
+            REPLY_NAME = 100
+            REPLY_TEXT = 500
+            BOARD_NAME = 250 
+        class Moderation:
+            pass
+        class Security:
+            ERROR_REQUESTED_URL = 30
+            ERROR_REQUEST_METHOD = 10
+            ERROR_REQUEST_CONTENT_TYPE = 50
+            ERROR_CHECK_RESULT = 30
+            SESSION_TOKEN = 870
+        class Logging:
+            NOTIFICATION_DELIVERY_TYPE = 5
+            NOTIFICATION_TYPE = 7
+            SERVER_ERROR_FILENAME = 40
+        class Analytics:
+            FEEDBACK = 500
+    class Defaults:
+        ID = Utils.UUIDToBinary('00000000000000000000000000000000')
+   
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR EVERYTHING DATA COLLECTION AND ANALYTICS
+
+class DataCollection:
+    class ParamNames:    
+        RESPONSE_CODE = 'responseCode'
+        MESSAGE_CODE = 'messageCode'
+        FROM_USER = 'fromUser'
+        TO_USER = 'toUser'
+        NEW_USER = 'newUser'
+        LATITUDE = 'latitude'
+        LONGITUDE = 'longitude' 
+        TIME_THREAD_CREATED = 'timeThreadCreated'
+        TIME_LAST_REPLY = 'timeOfLastReply'
+        HAS_TEXT = 'hasText'    
+        HAS_NAME = 'hasName'
+        HAS_TITLE = 'hasTitle'
+        HAS_IMAGE ='hasImage'
+        NUM_IMAGES_REQUESTED = 'numImagesRequested'
+        NUM_IMAGES_SERVED = 'numImagesServed'
+        NUM_MESSAGES_RECEIVED = 'numMessagesRecieved'
+        BLOCKED_USER = 'blockedUser'
+        BLOCKER_USER = 'blockerUser'
+        NUM_REPLIES = 'numReplies'
+        NUM_IMAGE_REPLIES = 'numImageReplies'
+        NUM_UNIQUE_POSTERS = 'numUniquePosters'
+        
+        FILENAME = 'fileName'
+        LINE_NUM = 'lineNum'
+        EXCEPTION_MESSAGE = 'exceptionMsg'
+        STACK_TRACE = 'stackTrace'
+        
+        NUM_RECEIVED = 'numReceived'
+        NUM_DELETED = 'numDeleted'
+        
+        POSTABLE_CONTENT_TYPE = 'postableContentType'
+        
+        DELIVERY_TYPE = 'delType'
+        NOTIFICATION_TYPE = 'notifType'
+        NUM_COLLAPSED_NOTIFICATIONS = 'numCollapsedNotif'
+        THREAD_ID = 'trID'
+            
+    class MessageCodes:
+        # All message codes for the app reside here                         
+        class UploadLocal:
+            RATE_LIMIT_EXCEEDED = 'URL-00-W00'   
+            POST_SUCCESSFUL = 'URL-00-I00'
+            POST_FAILED_SERVER_ERROR = 'URL-00-E00'
+            
+        class GetLocal:
+            REQUEST_SUCCESSFUL = 'URL-01-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-01-E00'
+            
+        class UploadMessage:
+            RECIPIENT_NOT_FOUND = 'URL-02-W00'
+            POST_SUCCESSFUL = 'URL-02-I00'
+            POST_FAILED_SERVER_ERROR = 'URL-02-E00'
+        
+        class GetMessage:
+            REQUEST_SUCCESSFUL = 'URL-03-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-03-E00'
+         
+        class UploadLive:
+            RATE_LIMIT_EXCEEDED = 'URL-04-W00'
+            POST_SUCCESSFUL = 'URL-04-I00'
+            POST_FAILED_SERVER_ERROR = 'URL-04-E00'
+    
+        class GetLive:
+            REQUEST_SUCCESSFUL = 'URL-05-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-05-E00'
+            
+        class UploadReply:
+            RATE_LIMIT_EXCEEDED = 'URL-06-W00'
+            THREAD_NOT_FOUND = 'URL-06-W01'
+            POST_SUCCESSFUL = 'URL-06-I00'            
+            POST_FAILED_SERVER_ERROR = 'URL-06-E00'
+        
+        class GetReply:
+            THREAD_NOT_FOUND = 'URL-07-W00'
+            REQUEST_SUCCESSFUL = 'URL-07-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-07-E00'
+        
+        class SecurityCreate:
+            CREATE_SUCCESSFUL = 'URL-08-I00'
+            CREATE_FAILED_SERVER_ERROR = 'URL-08-E00'
+            
+            
+        class ModerationBlock:
+            TARGET_USER_NOT_FOUND = 'URL-09-W00'
+            BLOCK_EXISTS = 'URL-09-W01'
+            REQUEST_SUCCESSFUL = 'URL-09-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-09-E00'
+            
+        class ModerationReport:
+            REQUEST_SUCCESSFUL = 'URL-10-I00'
+            CONTENT_NOT_FOUND = 'URL-10-W00'
+            REPORT_EXISTS = 'URL-10-W01'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-10-E00'
+            
+        class SecurityGetBanInfo:
+            REQUEST_SUCCESSFUL = 'URL-11-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-11-E00'
+           
+        class SecurityLogin:
+            REQUEST_SUCCESSFUL = 'URL-12-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-12-E00' 
+            
+        class AnalyticsFeedback:
+            REQUEST_SUCCESSFUL = 'URL-13-I00'
+            REQUEST_FAILED_SERVER_ERROR = 'URL-13-E00'         
+            
+        class Events:
+            class PruneLocalPosts:
+                SUCCESS = 'EVT-00-I00'
+                SERVER_ERROR = 'EVT-00-E00'
+            class PruneMessages:
+                SUCCESS = 'EVT-01-I00'
+                SERVER_ERROR = 'EVT-01-E00'
+            class PruneStaticContent:
+                SUCCESS = 'EVT-02-I00'
+                SERVER_ERROR = 'EVT-02-E00'    
+                AWS_DELETE_FAIL = 'EVT-02-W00'
+            class ServerNotification:
+                SUCCESS = 'EVT-03-I00'
+                SERVER_ERROR = 'EVT-03-E00'
+            class PruneSessionToken:
+                SUCCESS = 'EVT-04-I00'
+                SERVER_ERROR = 'EVT-04-E00'
+                
+        class Security:
+            ERROR = 'SEC-E'
+            URL_NOT_FOUND = 'SEC-E00'
+            NO_CLIENT_ID = 'SEC-E01'
+            BAD_CLIENT_ID = 'SEC-E02'
+            BAD_REQUEST_METHOD = 'SEC-E03'
+            BAD_CONTENT_TYPE = 'SEC-E04'
+            MALFORMED_JSON = 'SEC-E05'
+            WRONG_NUMBER_JSON_PARAMS = 'SEC-E06'
+            INVALID_JSON_PARAMS = 'SEC-E07'
+            DATA_VALIDATION_FAIL = 'SEC-E08'
+            BANNED_FROM_SERVICE = 'SEC-E09'
+            NO_SESSION_TOKEN = 'SEC-E10'
+            BAD_SESSION_TOKEN = 'SEC-E11'
+            EXPIRED_SESSION = 'SEC-E12'
+          
+            
+        
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR THE VIEWS
+
+class Views:        
+    class UploadLocalPost:
+        class JsonRequestKey:
+            LATITUDE = 'latitude'
+            LONGITUDE = 'longitude'
+            TEXT = 'text'
+            URL = 'url'
+            ARN = 'arn'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.LATITUDE, 
+                           JsonRequestKey.LONGITUDE,
+                           JsonRequestKey.TEXT, 
+                           JsonRequestKey.URL,
+                           JsonRequestKey.ARN]
+        
+    class GetLocalPost:
+        class JsonRequestKey:
+            LATITUDE = 'latitude'
+            LONGITUDE = 'longitude'
+            SEEN = 'seen'
+            COUNT = 'count'
+        class JsonResponseKey:
+            POST_ID = 'id'
+            POST_AUTHOR_ID = 'fromUser'
+            POST_TIME = 'time'
+            POST_LATITUDE = 'latitude'
+            POST_LONGITUDE = 'longitude'
+            POST_WEIGHT = 'weight'
+            POST_TEXT = 'text'
+            POST_URL = 'url'  
+            POST_ARN = 'arn'    
+        REQUIRED_PARAMS = [JsonRequestKey.LATITUDE,
+                           JsonRequestKey.LONGITUDE,
+                           JsonRequestKey.SEEN,
+                           JsonRequestKey.COUNT]
+        RADIUS_LIST = [50, 200, 1000] # Radiuses to query by
+        DISTANCEUNIT = 69.172 # Num. of miles in one degree of lat/long
+        
+    class UploadMessage:      
+        class JsonRequestKey:
+            TO_USER_ID = 'to'
+            TEXT = 'text'
+            URL = 'url'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.TO_USER_ID, 
+                           JsonRequestKey.TEXT,
+                           JsonRequestKey.URL]
+        
+    class GetMessage:
+        class JsonRequestKey:
+            pass
+        class JsonResponseKey:
+            MESSAGE_ID = 'id'
+            SENDER_USER_ID = 'fromUser'
+            MESSAGE_TIME = 'time'
+            MESSAGE_TEXT = 'text'
+            MESSAGE_URL = 'url' 
+        REQUIRED_PARAMS = []
+                
+    class UploadThread:
+        class JsonRequestKey:
+            THREAD_TEXT = 'text'
+            THREAD_URL = 'key'
+            THREAD_ARN = 'arn'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_TEXT,
+                           JsonRequestKey.THREAD_URL,
+                           JsonRequestKey.THREAD_ARN]
+        
+    class GetThread:
+        class JsonRequestKey:
+            pass
+        class JsonResponseKey:
+            THREAD_ORDER = 'order'
+            THREAD_NUM_UNIQUE_POSTERS = 'uniq'
+            THREAD_NUM_REPLIES = 'replies'
+            THREAD_ID = 'id'
+            THREAD_TEXT = 'text'
+            THREAD_TIME = 'time'
+            THREAD_URL = 'key'
+            THREAD_ARN = 'arn'
+        REQUIRED_PARAMS = []
+        
+    class UploadReply:
+        class JsonRequestKey:
+            THREAD_ID = 'threadID'
+            REPLY_TEXT = 'text'
+            REPLY_URL = 'key'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_ID,
+                           JsonRequestKey.REPLY_TEXT,
+                           JsonRequestKey.REPLY_URL]
+                
+    class GetReply:
+        class JsonRequestKey:
+            THREAD_ID = 'threadID'
+        class JsonResponseKey:
+            REPLY_ID = 'id'
+            REPLY_TEXT = 'text'
+            REPLY_TIME = 'time'
+            REPLY_URL = 'key'
+        REQUIRED_PARAMS = [JsonRequestKey.THREAD_ID]
+        
+    class Block:
+        class JsonRequestKey:
+            USER_TO_BLOCK_ID = 'block'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.USER_TO_BLOCK_ID]
+        
+    class Report:
+        class JsonRequestKey:
+            CONTENT_ID = 'id'
+        class JsonResponseKey:
+            pass
+        REQUIRED_PARAMS = [JsonRequestKey.CONTENT_ID]
+
+    class CreateUser:          
+        class JsonRequestKey:
+            pass
+        class JsonResponseKey:
+            USER_ID = 'id'   
+            IDENTITY_ID = 'identityId'    
+        REQUIRED_PARAMS = []
+        
+    class GetBanInfo:
+        class JsonResponseKey:
+            BAN_TIME_CREATED = 'banStartTime'
+            BAN_TIME_EXPIRES = 'banExpireTime'
+        REQUIRED_PARAMS = []
+        
+    class SecurityLogin:
+        class JsonResponseKey:
+            TOKEN = 'token'
+        REQUIRED_PARAMS = []
+        
+    class AnalyticsFeedback:
+        class JsonRequestKey:
+            TEXT = 'text'
+        REQUIRED_PARAMS = [JsonRequestKey.TEXT]
+        
+    class Handler404:
+        pass
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR HTTP RESPONSE FACTORY 
+
+class HttpResponseFactory:
+    class ResponseCodes:
+        class Success:
+            CODE_OK = 200
+        class ClientError:
+            CODE_BAD_REQUEST = 400
+            CODE_UNAUTHORIZED = 401
+            CODE_FORBIDDEN = 403
+            CODE_NOT_FOUND = 404
+            CODE_METHOD_NOT_ALLOWED = 405
+            CODE_CONFLICT = 409
+            CODE_PAYLOAD_TOO_LARGE = 413
+            CODE_UNSUPPORED_CONTENT_TYPE = 415
+            CODE_UNPROCESSABLE_ENTITY = 422
+            CODE_TOO_MANY_REQUESTS = 429
+        class ServerError:
+            CODE_INTERNAL_SERVER_ERROR = 500
+            CODE_SERVICE_UNAVAILABLE = 502
+            
+#------------------------------------------------------------------------------ 
+# CONSTANTS FOR THE SECURITY LAYER
+
+class SecurityLayer:
+    pass
+       
+
+    

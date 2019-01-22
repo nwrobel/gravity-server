@@ -1,0 +1,23 @@
+import boto3
+#import boto
+
+
+# Let's use Amazon S3
+s3 = boto3.resource('s3')
+    
+bucket = s3.Bucket('launch-zone')
+
+delete={
+        'Objects': [{'Key': 'local/00e5e6e3-acb4-3a81-9437-3ec27a2ad553.jpg'}, 
+                    {'Key': 'local/023b691d-bdc9-3b93-a632-78f0c5a2a18b.jpg'}],
+        'Quiet': False
+        
+        }
+
+response = bucket.delete_objects(Delete=delete)
+
+print(str(response))
+
+# object = s3.Object('launch-zone','local/00e5e6e3-acb4-3a81-9437-3ec27a2ad553.jpg')
+# 
+# print(str(object.get()))

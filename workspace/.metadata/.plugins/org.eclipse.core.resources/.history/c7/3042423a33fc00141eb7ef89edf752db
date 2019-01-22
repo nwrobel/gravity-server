@@ -1,0 +1,43 @@
+#===============================================================================
+# Script to fill out the test database
+#
+# Nick Wrobel, 5/16/15 
+#===============================================================================
+#===============================================================================
+import logging
+from Boomerang.Models.LocalPostModel import LocalPost
+from django.http import HttpResponse
+import json
+from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+
+logger = logging.getLogger(__name__)
+
+def CreateTestDB(requestData):
+    
+    startingLat = 24.52
+    stoppingLat = 49.38
+    startingLong = -66.95
+    stoppingLong = -124.77
+    
+    currentLat = startingLat
+    currentLong = startingLong
+    
+    while currentLat <= stoppingLat:
+        while currentLong >= stoppingLong:
+            post = LocalPost()
+            post.ipAddress = requestData.META['REMOTE_ADDR']
+            post.latitude = currentLat
+            post.longitude = currentLong
+            #logger.info("logging coordinates for latitude: " + str(currentLat) + " and long.: " + str(currentLong))          
+            post.save()
+            currentLong = currentLong - 0.01
+        currentLat = currentLat + 0.01
+        currentLong = startingLong
+        
+            
+    return HttpResponse(0)
+    
+    
+    

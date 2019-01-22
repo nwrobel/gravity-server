@@ -1,0 +1,110 @@
+#===============================================================================
+# View that lets a client block another user on local feed.
+#
+# Nick Wrobel
+# Created: 7/16/15
+# Modified: 7/16/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from django.db import transaction
+from django.core.files.base import ContentFile
+from Boomerang.Models.UserModel import User
+from Boomerang.Models.LocalUserBlockModel import LocalUserBlock
+from django.core.exceptions import ObjectDoesNotExist
+
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+@csrf_exempt
+def BlockLocalUser(requestData):
+    
+    clientFromUser = ''
+    clientBlockUser = ''
+    clientUserObject = None
+    clientBlockUserObject = None
+    localUserBlock= None
+       
+#------------------------------------------------------------------------------ 
+# Client data validation and saving values   
+    # Try getting the client Ip.
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.error('BLUV-E3: Error: client IP address not found in request data')
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != 'POST':
+        logger.error('BLUV-E0: Client ' + str(clientIP) + ' sent a request using method other than POST')
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data
+    decodedRequestData = requestData.read().decode()
+  
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.error('BLUV-E1: Client ' + str(clientIP) + ' had an error in parsing the json data.')
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        clientFromUser = requestJsonData['from']
+        clientBlockUser = requestJsonData['block']      
+            
+    except Exception: 
+        logger.exception('BLUV-E2: Client ' + str(clientIP) + ' had an error in extracting the parsed Json data (are the key names right?)')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Try to find the blocker user in the DB
+# If the user ID does not exist, then create that user
+    try:
+        clientUserObject = User.objects.get(pk=clientFromUser)
+    except ObjectDoesNotExist:
+        clientUserObject = User.objects.create(pk=clientFromUser)
+    except Exception:
+        logger.error('BLUV-E5: Error finding/creating the user in the DB')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Try to find the user to block in the DB
+# If the user ID does not exist, then something went wrong, because that user
+# should have been created when he uploaded the post.
+    try:
+        clientBlockUserObject = User.objects.get(pk=clientBlockUser)
+    except Exception:
+        logger.error('BLUV-E5: Error finding the user to block in the DB')
+        return HttpResponse(-1)
+    
+#------------------------------------------------------------------------------ 
+# Save the block in the DB
+
+    localUserBlock = LocalMessage()
+    newLocalMessage.time = int(time.time())
+    newLocalMessage.toUser = recipientUser
+    newLocalMessage.fromUser = senderUser
+    
+    try:
+    # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            newLocalMessage.save()
+            newLocalMessage.image.save(str(newLocalMessage.id), ContentFile(messageImage))
+    except Exception:
+        logger.exception('SLMV-E6: Client ' + str(clientIP) + ' has an error: json data loaded, but the message could not be saved into the DB (is json data the right type?)')
+        return HttpResponse(-1)
+    
+    return HttpResponse(0)

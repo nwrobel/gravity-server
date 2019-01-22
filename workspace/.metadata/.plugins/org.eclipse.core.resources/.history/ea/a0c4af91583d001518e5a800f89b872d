@@ -1,0 +1,149 @@
+#===============================================================================
+# View that lets a client reply to a live thread
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 8/3/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+from django.db import connection
+from django.core.files.base import ContentFile
+import logging
+import time
+from Boomerang.Custom.Security import VerifyClientForUrl
+from Boomerang.Models.LiveThreadModel import LiveThread
+from Boomerang.Models.LiveThreadReplyModel import LiveThreadReply 
+
+#------------------------------------------------------------------------------ 
+# CONSTANTS
+logger = logging.getLogger(__name__)
+
+# Read: a user can only post MAX_REPLIES_WITHIN_TIME replies within WITHIN_TIME_MIN minutes
+MAX_REPLIES_WITHIN_TIME = 10
+WITHIN_TIME_MIN = 5
+
+#------------------------------------------------------------------------------ 
+
+@csrf_exempt
+def ReplyToLiveThread(requestData):
+        
+    requiredParams = ['from', 'threadID', 'name', 'text', 'image']
+    clientVerificationInfo = VerifyClientForUrl('ReplyToLiveThread', requiredParams, requestData, True)
+    
+    if not clientVerificationInfo.isSecure:
+        if clientVerificationInfo.hadBadUUID:
+            return HttpResponse(-2) 
+        else:
+            return HttpResponse(-1)
+    
+    clientUser = clientVerificationInfo.user
+    clientThreadID = clientVerificationInfo.params['threadID']
+    clientReplyName = clientVerificationInfo.params['name']
+    clientReplyText= clientVerificationInfo.params['text']
+    clientReplyImg = clientVerificationInfo.params['image']
+    currentTime = time.time()
+
+#------------------------------------------------------------------------------ 
+# Moderation - check if this user is posting replies too fast
+    
+    query = """SELECT timeCreated from Boomerang_livethreadreply
+                WHERE user_id = %s 
+                ORDER BY timeCreated DESC LIMIT %s"""
+    
+    # Execute SQL directly without the ORM
+    cursor = connection.cursor()
+    cursor.execute(query, [clientUser.id, MAX_REPLIES_WITHIN_TIME ])
+    postTimes = cursor.fetchall() # fetchall gets all relevant rows
+
+    # results come out as a tuple - get only the first element in each result (the timestamp)
+    postTimes = [int(i[0]) for i in postTimes]
+
+    # If there are at least x posts, check the min of the set against the current time
+    if int(len(postTimes)) == MAX_REPLIES_WITHIN_TIME:
+        minPostTime = min(list(postTimes))
+        timeToleranceSeconds = WITHIN_TIME_MIN * 60
+        if (currentTime - minPostTime) < timeToleranceSeconds:
+            return HttpResponse(1) # return 1 if the client needs to wait
+        
+#------------------------------------------------------------------------------ 
+# Find the parent thread to reply to in the DB
+    try:
+        threadToReplyTo = LiveThread.objects.get(pk=clientThreadID)
+    except Exception:
+        logger.error('E001: Error finding the target thread in the DB')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Check if this user posting the reply is a new user (unique to the thread)
+
+    try:
+        # Select 'user' from all replies which have this thread as a parent 
+        currentThreadReplies = LiveThreadReply.objects.values('user').filter(parentThread=threadToReplyTo)
+        userIsUnique = True
+      
+        # If the thread has no replies and the OP samefags, then he is not a unique user.
+        # Check if user is the OP of the thread 
+        if threadToReplyTo.opUser.id == clientUser.id:
+            userIsUnique = False
+        # Else, look through the replies for this user. If he is here, not unique
+        else:
+            for reply in currentThreadReplies:
+                if reply['user'] == clientUser.id:
+                    userIsUnique = False
+                    break
+    except Exception:
+        logger.error('E004: Error during the unique user check')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Save the reply in the DB
+
+    try:
+        newReply = LiveThreadReply()
+        newReply.timeCreated = currentTime
+        newReply.user = clientUser
+        newReply.parentThread = threadToReplyTo
+        
+        # optional
+        if clientReplyName:
+            newReply.name = clientReplyName
+      
+        # Both text and image are optional, but both cannot be empty
+        # Check if both are null
+        if not clientReplyImg and not clientReplyText:
+            logger.error('E003: Client replys text and image were both null')
+            return HttpResponse(-1)
+        
+        # Else, if the text is there, go ahead and set it
+        if clientReplyText:
+            newReply.text = clientReplyText
+        
+        # Save the new reply  
+        # If there is an exception, roll back this entire db transaction
+        with transaction.atomic():      
+            if clientReplyImg:       
+                newReply.save()
+                newReply.image.save(str(newReply.id), ContentFile(clientReplyImg))             
+            else:
+                newReply.save()
+                
+            # Fill out the other info in the LiveThread table
+            # Nested transation: will roll back the entire thing if this fails
+            with transaction.atomic():
+                # django abstracts the update process: use save() the exisiting thread item
+                threadToReplyTo.timeOfLastReply = currentTime
+                threadToReplyTo.replyCount += 1             
+                if userIsUnique:
+                    threadToReplyTo.uniquePostersCount += 1                   
+                threadToReplyTo.save()
+            
+    except Exception:
+        logger.exception('E002: Client had an error creating reply: error with the database')
+        return HttpResponse(-1)
+    
+    logger.info('I000: User replied to a live thread successfully')
+    
+    return HttpResponse(0)

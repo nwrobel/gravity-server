@@ -1,0 +1,113 @@
+#===============================================================================
+# View that lets a client create a new live thread.
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 7/25/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+from django.core.files.base import ContentFile
+import logging
+import time
+from Boomerang.Custom.Security import VerifyClientForUrl
+from Boomerang.Models.UserModel import User
+from Boomerang.Models.LiveThreadModel import LiveThread
+from Boomerang.Models.LiveThreadReplyModel import LiveThreadReply
+
+
+#------------------------------------------------------------------------------ 
+# CONSTANTS
+
+LIVE_THREAD_CAP = 10
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+@csrf_exempt
+def CreateLiveThread(requestData):
+    
+    requiredParams = []
+    params = {}
+    clientID = ''
+    clientThreadTitle = ''
+    clientThreadOpName = ''
+    clientThreadText= ''
+    clientThreadImg = ''
+    user = None
+    numOfCurrentThreads = 0
+    newThread = None
+    threadToPrune = None
+    threadToPruneReplies = []
+    
+    requiredParams = ['from', 'title', 'name', 'text', 'image']
+    params = VerifyClientForUrl('CreateLiveThread', requiredParams, requestData)
+
+    if not params:
+        return HttpResponse(-1)
+
+    clientID = params['from']
+    clientThreadTitle = params['title']
+    clientThreadOpName = params['name']
+    clientThreadText= params['text']
+    clientThreadImg = params['image']
+
+#------------------------------------------------------------------------------ 
+# Find the user in the DB
+    try:
+        user = User.objects.get(pk=clientID)
+    except Exception:
+        logger.error('E000: Error finding the user in the DB')
+        return HttpResponse(-1)
+
+#------------------------------------------------------------------------------ 
+# Thread limit checking - check the number of threads in the DB
+# If the board is full (99.9% of the time it is), then we will prune a thread
+# with the lowest bump order.
+
+    numOfCurrentThreads = LiveThread.objects.count()
+
+#------------------------------------------------------------------------------ 
+# Save the live thread in the DB
+
+    try:
+        newThread = LiveThread()
+        newThread.timeCreated = newThread.timeOfLastReply = time.time()
+        newThread.opUser = user
+        newThread.replyCount = 0
+        newThread.uniquePostersCount = 1 # Including the OP
+        
+        # Note: thread text is not optional. But if it is empty, then we use the DB null checking
+        if clientThreadText and not clientThreadText.isspace():
+            newThread.text = clientThreadText
+        
+        if clientThreadOpName:
+            newThread.opName = clientThreadOpName
+        if clientThreadTitle:
+            newThread.title = clientThreadTitle
+         
+        # If there is an exception, roll back this entire db transaction
+        with transaction.atomic():
+            # Check the total num. of threads. If we are full, prune a thread
+            if numOfCurrentThreads >= LIVE_THREAD_CAP:
+                # Get the last thread ordered by timeLastReply and delete it and all of the replies it has
+                threadToPrune = LiveThread.objects.all().order_by('timeOfLastReply')[:1]             
+                for thread in threadToPrune:
+                    threadToPruneReplies = LiveThreadReply.objects.filter(parentThread=thread).delete()
+                    thread.delete()                
+                    
+                        
+            with transaction.atomic():
+                newThread.save()
+                newThread.image.save(str(newThread.id), ContentFile(clientThreadImg))
+    except Exception:
+        logger.exception('E001: Client ' + str(clientID) + ' had an error creating thread: error with the database')
+        return HttpResponse(-1)
+    
+    logger.info('I000: User ' + str(clientID) + ' created a live thread successfully')
+    
+    
+    return HttpResponse(0)

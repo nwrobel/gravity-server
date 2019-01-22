@@ -1,0 +1,210 @@
+#-------------------------------------------------------------------------------
+# ModDisplay
+# Displays more information about a particular piece of content
+# 
+# Nick Wrobel
+# Created: 12/4/15
+# Modified: 12/4/15
+#-------------------------------------------------------------------------------
+import sys
+import os
+import datetime
+import time
+import signal
+from prettytable import PrettyTable
+from django.core.management import BaseCommand
+from django.db.models import Count
+from django.core.exceptions import ObjectDoesNotExist
+from JokrBackend.Models.ModerationModels import Report, ModAction
+from JokrBackend.Models.ContentModels import PostableContent, LocalPost, Message, Thread, Reply
+import JokrBackend.Constants as Const
+import JokrBackend.Custom.Utils as Utils
+import JokrBackend.Custom.StaticContentUtils as StaticContentUtils
+
+# interrupt handler, handles the ^C event to stop program
+def signal_handler(signal, frame):
+    print ('Exiting ModDisplay')
+    sys.exit(0)
+
+
+class Command(BaseCommand):   
+    # set up command line args         
+    def add_arguments(self, parser):
+        parser.add_argument('id', nargs=1)
+        parser.add_argument('--showimage', default=False, required=False)
+        parser.add_argument('--showuser', default=False, required=False)
+        parser.add_argument('--showreports', default=False, required=False)
+        parser.add_argument('--fullthread', default=False, required=False)
+
+                
+    # A command must define handle(), all work happens here
+    def handle(self, *args, **options): 
+        
+        contentID = options['id'][0]
+        showImage = options['showimage']
+        showUser = options['showuser']
+        showReports = options['showreports']
+        fullThread = options['fullthread']
+        
+        signal.signal(signal.SIGINT, signal_handler)
+
+        
+        try:
+            content = PostableContent.objects.get(pk=contentID)
+        except ObjectDoesNotExist:
+            print('Specified content does not exist')
+            sys.exit(0)
+            
+        contentType = content.contentType
+        
+        if (contentType == Const.Tags.ContentTypes.LOCALPOST):
+            lp = LocalPost.objects.get(pk=contentID)
+            print('***********************************************************')
+            print('LOCALPOST: ', contentID)
+            if (showUser):
+                print('FromUser: ', Utils.ConvertBinaryToUUID(content.fromUser.uuid))
+            if (showReports):
+                numReports = Report.objects.filter(cid=contentID).count()
+                print('NumReports: ', numReports)
+            print('GPS: ', lp.latitude, ',', lp.longitude)
+            print('Text: ', lp.text)
+            print('***********************************************************')
+
+            
+        if (contentType == Const.Tags.ContentTypes.MESSAGE):
+            ms = Message.objects.get(pk=contentID)
+            print('***********************************************************')
+            print('MESSAGE: ', contentID)
+            if (showUser):
+                print('FromUser: ', Utils.ConvertBinaryToUUID(content.fromUser.uuid))
+            if (showReports):
+                numReports = Report.objects.filter(cid=contentID).count()
+                print('NumReports: ', numReports)
+            print('ToUser: ', Utils.ConvertBinaryToUUID(ms.toUser.uuid))
+            print('Text: ', ms.text)
+            print('***********************************************************')
+
+            
+        if (contentType == Const.Tags.ContentTypes.THREAD):
+            th = Thread.objects.get(pk=contentID)
+            print('***********************************************************')
+            print('THREAD ID: ', contentID)
+            if (showUser):
+                print('FromUser: ', Utils.ConvertBinaryToUUID(content.fromUser.uuid))
+            if (showReports):
+                numReports = Report.objects.filter(cid=contentID).count()
+                print('NumReports: ', numReports)
+            print('Title: ', th.title)
+            print('OpName: ', th.name)
+            print('NumReplies: ', th.replyCount)
+            print('Text: ', th.text)
+            print('***********************************************************')
+
+            
+            if (fullThread):
+                self._DisplayThread(contentID)
+            
+        if (contentType == Const.Tags.ContentTypes.REPLY):
+            re = Reply.objects.get(pk=contentID)
+            print('***********************************************************')
+            print('REPLY ID: ', contentID)
+            if (showUser):
+                print('FromUser: ', Utils.ConvertBinaryToUUID(content.fromUser.uuid))
+            if (showReports):
+                numReports = Report.objects.filter(cid=contentID).count()
+                print('NumReports: ', numReports)
+            print('Name: ', re.name)
+            print('HasImage: ', bool(re.url))
+            print('Text: ', re.text)
+            print('***********************************************************')
+
+            
+        if (showImage):
+            print('Downloading S3 image..')
+            StaticContentUtils.DownloadStaticContent(key=content.url, 
+                                                     contentType=contentType, 
+                                                     downloadDir=Const.Scripts.Moderation.CACHE_DIR)
+            openImg = lambda: os.system('feh ' + Const.Scripts.Moderation.CACHE_DIR + content.url)
+            openImg()
+            
+        print('You have viewed this content. Please enter an action:')
+        print('del - delete the content')
+        print('ok - mark content as not offensive and safe')
+        print('pen - mark content as needing further review')
+        print('ig - ignore the content (temporary)')
+        input_var = input()
+        
+        if (input_var == 'del'):
+            print('Are you sure you want to delete ', contentType, ' ', contentID, '? (y/n)')
+            input_var = input()
+            
+            if (input_var == 'Y' or input_var == 'y'):
+                content.delete()
+                newModAction = ModAction.objects.create(result=Const.Tags.ModActions.CONTENT_DELETED,
+                                         cid=contentID,
+                                         contentType=contentType)
+                Report.objects.filter(cid=contentID).update(modActionID=newModAction)
+                
+                print('Deletion complete')
+            else:
+                print('Exiting')
+            
+        elif (input_var == 'ok'):
+            print('Are you sure you want to mark', contentType, ' ', contentID, 'as safe? (y/n)')
+            input_var = input()
+            
+            if (input_var == 'Y' or input_var == 'y'):
+                newModAction = ModAction.objects.create(result=Const.Tags.ModActions.CONTENT_OK,
+                                         cid=contentID,
+                                         contentType=contentType)
+                Report.objects.filter(cid=contentID).update(modActionID=newModAction)
+                
+                print('Successfully marked as safe')
+            else:
+                print('Exiting')
+        elif (input_var == 'pen'):
+            print('Are you sure you want to mark', contentType, ' ', contentID, 'as pending for review? (y/n)')
+            input_var = input()
+            
+            if (input_var == 'Y' or input_var == 'y'):
+                newModAction = ModAction.objects.create(result=Const.Tags.ModActions.REVIEW_PENDING,
+                                         cid=contentID,
+                                         contentType=contentType)
+                Report.objects.filter(cid=contentID).update(modActionID=newModAction)
+                
+                print('Successfully marked as pending for review')
+            else:
+                print('Exiting')
+        elif (input_var == 'ig'):
+            print('Are you sure you want to ignore', contentType, ' ', contentID, '? You can come back to it later (y/n)')
+            input_var = input()
+            
+            if (input_var == 'Y' or input_var == 'y'):
+                newModAction = ModAction.objects.create(result=Const.Tags.ModActions.IGNORED,
+                                         cid=contentID,
+                                         contentType=contentType)
+                Report.objects.filter(cid=contentID).update(modActionID=newModAction)
+                
+                print('Successfully marked as ignored')
+            else:
+                print('Exiting')
+
+    
+    def _DisplayThread(self, contentID):
+        replies = Reply.objects.filter(parentThread=contentID)
+        
+        print('PRINITING THREAD WITH ID ', contentID)
+        
+        for re in replies:
+            print('***********************************************************')
+            print('* REPLY ID: ', re.cid)
+            print('* Name: ', re.name)
+            print('* HasImage: ', bool(re.url))
+            print('* Text: ', re.text)
+            
+            
+            
+        
+        
+                
+    

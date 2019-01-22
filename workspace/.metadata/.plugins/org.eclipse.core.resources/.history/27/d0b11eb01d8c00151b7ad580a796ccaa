@@ -1,0 +1,98 @@
+#-------------------------------------------------------------------------------
+# Module for all content models.
+# Database content that is critical to make the core features of the app run.
+# 
+# Nick Wrobel
+# Created: 10/27/15
+# Modified: 10/27/15
+#-------------------------------------------------------------------------------
+
+from django.db import models
+import time
+import JokrBackend.Constants as Const
+from JokrBackend.Custom.ModelFields import UUIDBinaryField
+
+#-------------------------------------------------------------------------------
+# Model for a user account
+#-------------------------------------------------------------------------------
+class User(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    uuid = UUIDBinaryField(db_index=True, default=None, null=False)
+    timeLastUsed = models.IntegerField(db_index=True, default=time.time, null=False)
+    
+    class Meta:
+        db_table = Const.Database.TableNames.Content.USER
+
+#-------------------------------------------------------------------------------
+# Model for a local post
+#-------------------------------------------------------------------------------
+class LocalPost(models.Model):
+    # note: timestamps are an int value
+    timeCreated = models.IntegerField(default=time.time, null=False) 
+    fromUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+    text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.LOCALPOST_TEXT)
+    url = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.STATIC_URL)
+    
+    class Meta:
+        db_table = Const.Database.TableNames.Content.LOCALPOST
+        
+#-------------------------------------------------------------------------------
+# Model for a user-user message
+#-------------------------------------------------------------------------------
+class Message(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    toUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+    fromUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+    text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.MESSAGE_TEXT)
+    url = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.STATIC_URL)
+
+    class Meta:
+        db_table = Const.Database.TableNames.Content.MESSAGE
+
+#-------------------------------------------------------------------------------
+# Model for a live board
+#-------------------------------------------------------------------------------
+class Board(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    name = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.BOARD_NAME)
+
+    class Meta:
+        db_table = Const.Database.TableNames.Content.BOARD
+        
+#-------------------------------------------------------------------------------
+# Model for a thread on live
+#-------------------------------------------------------------------------------
+class Thread(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    fromUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+    # parentBoard = models.ForeignKey(Board, related_name='+', default=None, null=False)
+    name = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_NAME, default=None, null=True)
+    title = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TITLE, default=None, null=True)
+    text = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TEXT, default=None, null=False)
+    url = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.STATIC_URL)
+        
+    # Optional fields, denormalized
+    timeOfLastReply = models.IntegerField(default=time.time, null=False)
+    replyCount = models.IntegerField(default=None, null=False)
+    uniquePostersCount = models.IntegerField(default=None, null=False)
+    imageReplyCount = models.IntegerField(default=None, null=False)
+    
+    class Meta:
+        db_table = Const.Database.TableNames.Content.THREAD
+            
+#-------------------------------------------------------------------------------
+# Model for a thread reply
+#-------------------------------------------------------------------------------
+class Reply(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    fromUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+    parentThread = models.ForeignKey(Thread, related_name='+', default=None, null=False)
+    name = models.CharField(max_length=Const.Database.MaxLengths.Content.REPLY_NAME, default=None, null=True)
+    text = models.CharField(max_length=Const.Database.MaxLengths.Content.REPLY_TEXT, default=None, null=True)
+    url = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.STATIC_URL)
+    
+    class Meta:
+        db_table = Const.Database.TableNames.Content.REPLY
+        

@@ -1,0 +1,125 @@
+#===============================================================================
+# View for accepting some data from the client and creating a local post.
+# Accepts an image, a caption, and GPS coordinates.
+# Places this info, along with the IP address in the LocalPosts table in the db.
+# Saves the posted data to disk.
+#
+# Nick Wrobel, 5/10/15
+#===============================================================================
+import logging
+import base64
+import gzip
+import zlib
+from Boomerang.Models.LocalPostModel import LocalPost
+from django.http import HttpResponse
+import json
+from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.db import transaction
+
+from PIL import Image
+#from PIL import ImageFile
+#from PIL.Image import core as _imaging
+from io import BytesIO
+              
+# Sets up the logging for this file
+# Note: all other logging config takes place in the settings files
+logger = logging.getLogger(__name__)
+         
+# CSRF requirement poses a problem, remove CSRF here.     
+@csrf_exempt                        
+def UploadLocalPost(requestData):
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+    decodedRequestData = 0
+    requestJsonData = 0
+    latitude = 0
+    longitude = 0
+    originalImgFileString = ''
+    imageFile = None
+    clientIP = 0
+    newPost = None
+    
+    # RULE: if the local post was saved correctly, return a response 0
+    #       else return a -1
+    
+    # Try getting the client Ip. 
+    try:    
+        clientIP = requestData.META['REMOTE_ADDR']
+    except Exception:
+        logger.exception("ULPV-E3: Error: client IP address not found in request data")
+        return HttpResponse(-1)
+    
+    # Check the request type. If it's not a POST, return -1
+    if requestData.method != "POST":
+        logger.exception("ULPV-E0: Client " + str(clientIP) + " sent a request using method other than POST")
+        return HttpResponse(-1)
+    
+    # Read the Http request data, decode the binary data 
+    decodedRequestData = requestData.read().decode()
+             
+    # Check the Json data. If we are unable to load it for whatever reason,
+    # return -1 and log the error.
+    try:      
+        # Parse the Json - create a dictionary 'requestJsonData'
+        requestJsonData = json.loads(decodedRequestData)   
+    except Exception: 
+        logger.exception("ULPV-E1: Client " + str(clientIP) + " had and error in parsing the json data.")
+        return HttpResponse(-1)
+    
+    # Try extracting the data we need from the Json. 
+    # If there is an error here, the json key-value pairs don't match up.
+    # Log the error and reutrn -1.
+    try: 
+        latitude = requestJsonData['latitude']
+        longitude = requestJsonData['longitude']
+        originalImgFileString = requestJsonData['image']
+    except Exception: 
+        logger.exception("ULPV-E2: Client " + str(clientIP) + " had an error in extracting the parsed Json data (are the key names right?)")
+        return HttpResponse(-1)
+   
+    # Create a new LocalPost and populate the fields from the Json
+    newPost = LocalPost()
+    newPost.ipAddress = clientIP
+    newPost.latitude = latitude
+    newPost.longitude = longitude
+    
+    # Process the image
+    # Roatate 90 deg. to the rt.
+    
+#     output = StringIO.StringIO()
+#     image.save(output)
+#     contents = output.getvalue()
+#     output.close()
+    
+    fileOutput = BytesIO()
+    gzString = base64.b64decode(originalImgFileString)
+    uncompressedStr = gzip.GzipFile(fileobj=BytesIO(gzString)).read()
+    im = Image.open(BytesIO(uncompressedStr))
+    im2 = im.rotate(270)
+    im2.save(fileOutput.read(), format='JPEG')
+    
+    logger.info(fileOutput)
+ 
+    # Try to save what we have in the database.
+    # Save the post in the db, then try to write the image to disk 
+    # with the post ID as filename.
+    
+    # Note: the image is saved to disk as a gzipped image file that has been
+    # converted to a base64 string.
+    try:
+        # If there is an exception, roll back this db transaction
+        with transaction.atomic():
+            newPost.save()
+            newPost.image.save(str(newPost.id), ContentFile(fileOutput.read()))
+    except Exception:
+        logger.exception("ULPV-E4: Client " + str(clientIP) + " has an error: json data loaded, but the post could not be saved into the DB (is json data the right type?)")
+        return HttpResponse(-1)
+
+    logger.info("ULPV-I0: client " + str(clientIP) + " local post was sent and saved successfully: lat: " 
+                + str(latitude) + ", long: " + str(longitude))
+    
+    
+    # If all went well, return a 0
+    return HttpResponse(0)

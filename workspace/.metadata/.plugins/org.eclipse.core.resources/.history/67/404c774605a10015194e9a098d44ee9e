@@ -1,0 +1,102 @@
+#-------------------------------------------------------------------------------
+# ModTop
+# This script (which works like the 'top' command in linux) outputs the 
+# top pieces of content, ordered by reports.
+# 
+# Nick Wrobel
+# Created: 11/21/15
+# Modified: 12/4/15
+#-------------------------------------------------------------------------------
+import sys
+import os
+import datetime
+import time
+import signal
+from prettytable import PrettyTable
+from django.core.management import BaseCommand
+from django.db.models import Count
+from JokrBackend.Models.ModerationModels import Report, ModAction
+from JokrBackend.Models.ContentModels import PostableContent
+import JokrBackend.Constants as Const
+import JokrBackend.Custom.Utils as Utils
+from django.core.exceptions import ObjectDoesNotExist
+
+# interrupt handler, handles the ^C event to stop program
+def signal_handler(signal, frame):
+    print ('Exiting ModTop')
+    sys.exit(0)
+
+
+class Command(BaseCommand):   
+    # set up command line args         
+    def add_arguments(self, parser):
+        parser.add_argument('--rate', default=2, required=False)
+        parser.add_argument('--type', default='all', 
+                            choices=[Const.Tags.ContentTypes.LOCALPOST,
+                                     Const.Tags.ContentTypes.MESSAGE,
+                                     Const.Tags.ContentTypes.THREAD,
+                                     Const.Tags.ContentTypes.REPLY],
+                            required=False)
+        
+    # A command must define handle(), all work happens here
+    def handle(self, *args, **options): 
+        
+        refreshRate = options['rate']
+        type = options['type']
+                
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        Utils.ClearConsole()
+        
+        # constantly refresh
+        while (True):       
+            table = None 
+            table = PrettyTable(['CID', 'Type', 'NumReports', 'ModAction' , 'TimeCreated', 'FromUser'])
+            
+            if (type == 'all'):
+                print('a')
+                reports = Report.objects.values('cid', 'modAction_id').annotate(num_reports=Count('cid')).order_by('-num_reports')
+
+            elif (type == Const.Tags.ContentTypes.LOCALPOST):
+                print('b')
+                reports = Report.objects.filter(contentType=Const.Tags.ContentTypes.LOCALPOST)
+                reports = reports.values('cid', 'modAction_id').annotate(num_reports=Count('cid')).order_by('-num_reports')
+                
+            elif (type == Const.Tags.ContentTypes.MESSAGE):
+                print('c')
+                reports = Report.objects.filter(contentType=Const.Tags.ContentTypes.MESSAGE)
+                reports = reports.values('cid', 'modAction_id').annotate(num_reports=Count('cid')).order_by('-num_reports')
+                
+            elif (type == Const.Tags.ContentTypes.THREAD):
+                print('d')
+                reports = Report.objects.filter(contentType=Const.Tags.ContentTypes.THREAD)
+                reports = reports.values('cid', 'modAction_id').annotate(num_reports=Count('cid')).order_by('-num_reports')
+                
+            elif (type == Const.Tags.ContentTypes.REPLY):
+                print('e')
+                reports = Report.objects.filter(contentType=Const.Tags.ContentTypes.REPLY)
+                reports = reports.values('cid', 'modAction_id').annotate(num_reports=Count('cid')).order_by('-num_reports')
+
+            for rep in reports:
+                cid = rep['cid']
+                content = PostableContent.objects.get(pk=cid)
+                numReports = rep['num_reports']
+                contentType = content.contentType
+                
+                try:
+                    modActionType = ModAction.objects.get(pk=rep['modAction_id'])            
+                except ObjectDoesNotExist:
+                    modActionType = ''
+                
+                timeCreated = datetime.datetime.fromtimestamp(content.timeCreated).strftime('%Y-%m-%d %H:%M:%S')
+                fromUser = Utils.ConvertBinaryToUUID(content.fromUser.uuid)
+    
+                table.add_row([cid, contentType, numReports, modActionType, timeCreated, fromUser])
+            
+            print (table)
+            
+            time.sleep(refreshRate)
+            Utils.ClearConsole()
+            print('Updating results every ', refreshRate, ' seconds')
+            
+    

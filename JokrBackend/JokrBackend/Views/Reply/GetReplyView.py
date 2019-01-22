@@ -1,0 +1,104 @@
+#===============================================================================
+# GetReplyView
+# View that lets a client get all the current replies to a live thread.
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 11/6/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+from django.core.exceptions import ObjectDoesNotExist
+import JokrBackend.Custom.Utils as Utils
+import simplejson as json
+from JokrBackend.models import Thread, Reply
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+import JokrBackend.DataCollection.DataCollector as DataCollector
+from JokrBackend.DataCollection import QueryManager
+
+
+@csrf_exempt
+def GetReply(requestData):
+    TAG = Const.Tags.Urls.GET_REPLY
+        
+    securityProperties = RunThroughSecurityLayer(TAG, requestData)
+    if (not securityProperties.isSecure):
+        return securityProperties.httpResponse
+    
+    try:
+        
+        clientUser = securityProperties.userObject
+        clientThreadID = securityProperties.jsonRequestData[Const.Views.GetReply.JsonRequestKey.THREAD_ID]
+    
+        # Retrieve the thread and replies from the database
+        thread = QueryManager.GetObjectByID(Thread, clientThreadID)
+        threadReplies = Reply.objects.filter(parentThread=thread)
+        
+        if (not thread):
+            DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                       responseCode=Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND, 
+                                       messageCode=Const.DataCollection.MessageCodes.GetReply.THREAD_NOT_FOUND) 
+            
+            return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ClientError.CODE_NOT_FOUND, 
+                                                        Const.DataCollection.MessageCodes.GetReply.THREAD_NOT_FOUND)
+        
+
+        # Package the thread replies and return
+        clientReplyListToReturn = []
+        for reply in threadReplies:
+            replyClientObject = GetReplyClientObject(text=reply.text, 
+                                                     time=reply.timeCreated, 
+                                                     id=Utils.BinaryToUUID(reply.id), 
+                                                     key=reply.key)  
+            clientReplyListToReturn.append(replyClientObject.getDict())   
+              
+        jsonString = json.dumps(clientReplyListToReturn)
+
+        # log and return on success   
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                    responseCode=Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                    messageCode=Const.DataCollection.MessageCodes.GetReply.REQUEST_SUCCESSFUL) 
+                         
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.Success.CODE_OK, 
+                                                    jsonString, 'application/json')
+    
+    except Exception as e:
+        DataCollector.logServerError(e)
+        DataCollector.UpdateURLHit(hitID=securityProperties.hitID,
+                                    responseCode=Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                    messageCode=Const.DataCollection.MessageCodes.GetReply.REQUEST_FAILED_SERVER_ERROR) 
+
+        return HttpResponseFactory.MakeHttpResponse(Const.HttpResponseFactory.ResponseCodes.ServerError.CODE_INTERNAL_SERVER_ERROR, 
+                                                    Const.DataCollection.MessageCodes.GetReply.REQUEST_FAILED_SERVER_ERROR)
+   
+        
+#------------------------------------------------------------------------------ 
+# This class is a wrapper for a live thread reply to be sent to client.
+#------------------------------------------------------------------------------ 
+class GetReplyClientObject:
+    def __init__(self, text, time, id, key):
+        # self.name = name
+        self.text = text
+        self.time = time
+        self.id = id
+        self.key = key
+        
+        # Format the optional fields - if they are null, use empty string
+#         if Utils.StringIsEmpty(name):
+#             self.name = ''
+        if Utils.StringIsEmpty(text):
+            self.text = ''
+        if Utils.StringIsEmpty(key):
+            self.key = ''
+        
+    # Returns the dict
+    def getDict(self):
+        dict = {}
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_TEXT] = self.text
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_TIME] = self.time
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_ID] = self.id
+        dict[Const.Views.GetReply.JsonResponseKey.REPLY_URL] = self.key
+        return dict
+    

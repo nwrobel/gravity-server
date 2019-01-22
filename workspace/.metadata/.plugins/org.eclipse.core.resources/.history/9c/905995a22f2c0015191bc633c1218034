@@ -1,0 +1,27 @@
+#===============================================================================
+# View that lets a client block another user on local feed.
+#
+# Nick Wrobel
+# Created: 7/16/15
+# Modified: 7/16/15
+#===============================================================================
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from django.db import transaction
+from django.core.files.base import ContentFile
+from Boomerang.Models.UserModel import User
+from Boomerang.Models.LocalMessageModel import LocalMessage
+from Boomerang.Custom.LocalMessageClientObject import LocalMessageClientObject
+
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+@csrf_exempt
+def BlockLocalUser(requestData):

@@ -1,0 +1,16 @@
+#===============================================================================
+# Model for a live thread. 
+# 
+# Nick Wrobel 
+# Created: 7/20/15
+# Modified: 7/20/15
+#===============================================================================
+
+from django.db import models
+from Boomerang.Models.UserModel import User
+
+class LiveThread(models.Model):
+    timeCreated = models.IntegerField(default=0, null=False)
+    opUser = models.ForeignKey(User, related_name='opUser')
+
+    image = models.FileField(upload_to='live/threads/img', storage=ifs, default=None, null=False)

@@ -1,0 +1,207 @@
+#-------------------------------------------------------------------------------
+# ContentManager module
+# This module handles tasks related to the deletion and archival
+# of dynamic content (user-created content). Creation of content is trivial
+# and does not need to be encapsulated here.
+# 
+# All content should be archived when taken offline: never deleted. 
+# 
+# Nick Wrobel
+# Created: 2/12/16
+# Modified: 2/14/16
+#-------------------------------------------------------------------------------
+
+from django.core.exceptions import ObjectDoesNotExist
+import JokrBackend.DataCollection.QueryManager as QueryManager
+from JokrBackend.models import OnlineContent, ArchivedContent, LocalPost, Message, Thread, Reply, ArchivedLocalPost, ArchivedMessage, ArchivedThread, ArchivedReply
+ 
+#-------------------------------------------------------------------------------
+# DeleteContent
+# Deletes dynamic content from the database, archiving it first.
+#-------------------------------------------------------------------------------
+def DeleteContent(cidBinary):
+    
+    # simply archive the content, then delete it
+    ArchiveContent(cidBinary)
+    
+    # Deleting a parent model deletes all of the child models.
+    OnlineContent.objects.get(id=cidBinary).delete()
+
+#-------------------------------------------------------------------------------
+# ArchiveContent
+# Archives dynamic content
+#-------------------------------------------------------------------------------
+def ArchiveContent(cidBinary):
+    import JokrBackend.Constants as Const
+
+    content = OnlineContent.objects.get(id=cidBinary)
+              
+    if (content.contentType == Const.Tags.ContentTypes.THREAD):
+        _ArchiveThread(content)
+        
+    elif (content.contentType == Const.Tags.ContentTypes.REPLY):
+        _ArchiveReply(content)
+        
+#-------------------------------------------------------------------------------
+# MarkAsFavorite
+# Sets the fav flag on a content to true.
+# Used for tagging.
+#-------------------------------------------------------------------------------
+def MarkAsFavorite(cid):
+    
+    # Get the content from the online DB
+    try:
+        content = OnlineContent.objects.get(pk=cid)
+    
+    # Try the archive if the content does not exist online
+    except ObjectDoesNotExist:
+        content = ArchivedContent.objects.get(pk=cid)
+    
+    # Update the flag and save
+    content.fav = True
+    content.save()
+        
+#-------------------------------------------------------------------------------
+# _ArchiveLocalPost
+#-------------------------------------------------------------------------------
+def _ArchiveLocalPost(content):
+#     localPost = LocalPost.objects.get(pk=content.id)
+#      
+#     # Check if the post exists in the archive
+#     archivedPost = ArchivedPostableContent.objects.filter(pk=content.id)
+#          
+#     # If it does not exist, continue
+#     if (not archivedPost):     
+#         LocalPostArchive.objects.create(pk=content.id,
+#                                         timeCreated=content.timeCreated,
+#                                         fromUser=content.fromUser,
+#                                         contentType=content.contentType,
+#                                         url=content.url,
+#                                         latitude=localPost.latitude,
+#                                         longitude=localPost.longitude,
+#                                         text=localPost.text)
+#  
+#     # S3 operations
+#     StaticContentUtils.ArchiveStaticContent(content.url)
+    pass
+
+#-------------------------------------------------------------------------------
+# _ArchiveMessage
+#-------------------------------------------------------------------------------
+def _ArchiveMessage(content):
+#     message = Message.objects.get(pk=content.id)
+#     
+#     # Check if the message exists in the archive
+#     archivedPost = ArchivedPostableContent.objects.filter(pk=content.id)
+#         
+#     # If it does not exist, continue
+#     if (not archivedPost):
+#         MessageArchive.objects.create(pk=content.id,
+#                                       timeCreated=content.timeCreated,
+#                                         fromUser=content.fromUser,
+#                                         contentType=content.contentType,
+#                                         url=content.url,
+#                                         toUser=message.toUser,
+#                                         text=message.text)
+#     
+#     # S3 operations
+#     StaticContentUtils.ArchiveStaticContent(content.url)
+    pass
+
+#-------------------------------------------------------------------------------
+# _ArchiveThread
+#-------------------------------------------------------------------------------
+def _ArchiveThread(content):
+    
+    # Get the online thread and all of its replies 
+    onlineThread = Thread.objects.get(id=content.id)
+    onlineReplies = Reply.objects.filter(parentThread=onlineThread)
+    
+    try:
+        # Check if the thread is already archived and retrieve it if it is 
+        archivedThread = ArchivedThread.objects.get(id=content.id)
+        
+    # If the thread is not archived already, then archive it 
+    except ObjectDoesNotExist:
+        pass # fall back and create the archived thread
+    
+    try:
+        archivedContent = ArchivedContent.objects.create(id=onlineThread.id,
+                                                         timeOriginalCreated=onlineThread.timeCreated,
+                                                          fromUser=onlineThread.fromUser,
+                                                          fromSession=onlineThread.fromSession,
+                                                          key=onlineThread.key,
+                                                          contentType=onlineThread.contentType)
+    
+    except ObjectDoesNotExist:
+        archivedContent = ArchivedContent.objects.create(id=onlineThread.id,
+                                                        timeOriginalCreated=onlineThread.timeCreated,
+                                                        fromUser=onlineThread.fromUser,
+                                                        fromSession=None,
+                                                        key=onlineThread.key,
+                                                        contentType=onlineThread.contentType)
+        
+    archivedThread = ArchivedThread.objects.create(archivedContent=archivedContent,
+                                                    arn=onlineThread.arn,
+                                                    text=onlineThread.text) 
+        
+    # Archive each online reply and link it back to the archived parent
+    # thread
+    for reply in onlineReplies:
+        ArchivedReply.objects.create(id=reply.id,
+                                    timeOriginalCreated=reply.timeCreated,
+                                    fromUser=reply.fromUser,
+                                    fromSession=reply.fromSession,
+                                    key=reply.key,
+                                    contentType=reply.contentType,
+                                    fav=reply.fav,
+                                    parentThread=archivedThread,
+                                    text=reply.text)
+
+#-------------------------------------------------------------------------------
+# _ArchiveReply
+#-------------------------------------------------------------------------------
+def _ArchiveReply(content):
+    import JokrBackend.DataCollection.QueryManager as QueryManager
+
+    # Check if the reply exists in the archive
+    # If it does not, then continue. Otherwise, do nothing
+    if (not QueryManager.ContentIsArchived(content.id)):
+        
+        # Get the online reply    
+        onlineReply = Reply.objects.get(pk=content.id)
+        
+        # Check and get the parent thread if it is archived
+        try:
+            archivedThread = ArchivedThread.objects.get(pk=onlineReply.parentThread)
+                    
+        # If the parent thread is not archived, we need to archive it first
+        # before we can archive this reply.
+        except ObjectDoesNotExist:
+            
+            # Get the online parent thread
+            onlineThread = Thread.objects.get(pk=onlineReply.parentThread)
+
+            # Archive the online thread
+            archivedThread = ArchivedThread.objects.create(id=onlineThread.id,
+                                                  timeOriginalCreated=onlineThread.timeCreated,
+                                                  fromUser=onlineThread.fromUser,
+                                                  fromSession=onlineThread.fromSession,
+                                                  key=onlineThread.key,
+                                                  contentType=onlineThread.contentType,
+                                                  fav=onlineThread.fav,
+                                                  arn=onlineThread.arn,
+                                                  text=onlineThread.text) 
+            
+        # Archive the reply and link it to the archived thread
+        ArchivedReply.objects.create(id=onlineReply.id,
+                                    timeOriginalCreated=onlineReply.timeCreated,
+                                    fromUser=onlineReply.fromUser,
+                                    fromSession=onlineReply.fromSession,
+                                    key=onlineReply.key,
+                                    contentType=onlineReply.contentType,
+                                    fav=onlineReply.fav,
+                                    parentThread=archivedThread,
+                                    text=onlineReply.text)
+        
+    

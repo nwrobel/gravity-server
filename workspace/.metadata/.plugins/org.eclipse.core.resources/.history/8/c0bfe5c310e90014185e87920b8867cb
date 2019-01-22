@@ -1,0 +1,4 @@
+# Allows for python to talk to MySQL
+import pymysql
+from Boomerang import settings_dev
+pymysql.install_as_MySQLdb() 

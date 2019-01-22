@@ -1,0 +1,38 @@
+#-------------------------------------------------------------------------------
+# GCMManger
+# Module to perform routines related to GCM
+# 
+# Nick Wrobel
+# Created: 3/9/16
+# Modified: 3/9/16
+#-------------------------------------------------------------------------------
+import requests
+import collections
+import JokrBackend.Constants as Const 
+
+#-------------------------------------------------------------------------------
+# Subscribes a user to a thread, given the user's instanceID
+#-------------------------------------------------------------------------------
+def SubscribeUserToThread(instanceID, threadID):
+    
+    googleResult = collections.namedtuple('check', ['success', 'invalidToken'])
+
+    topicName = Const.GCM.THREAD_TOPIC_PREFIX + threadID
+
+    url = 'https://iid.googleapis.com/iid/v1/%s/rel/topics/%s' \
+        % (instanceID, topicName)
+    
+    headers = {'Content-Type': 'application/json',
+               'Authorization':'key=%s' % Const.GCM.API_KEY }
+    
+    
+    response = requests.post(url, headers=headers)
+    
+    # check for errors
+    if 'error' in response:
+        # Get the error
+        if (response['error'] == 'InvalidToken'):
+            return googleResult(success=False, invalidToken=True)
+    
+    print(r.text)
+    

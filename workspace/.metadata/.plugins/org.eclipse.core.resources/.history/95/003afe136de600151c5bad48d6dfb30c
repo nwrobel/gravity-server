@@ -1,0 +1,324 @@
+#===============================================================================
+# Module for handling the task of server-side data validation
+# 
+# Nick Wrobel
+# Created: 8/10/15
+# Modified: 2/15/16
+#===============================================================================
+
+import JokrBackend.Constants as Const
+import JokrBackend.Custom.Utils as Utils
+from binascii import unhexlify
+
+#-------------------------------------------------------------------------------
+# DataIsValidForURL
+# Does data validation for one of our URLs. 
+# 
+# params:
+#     urlTag - tag of the URL
+#     jsonData - json dictionary -> data to be checked
+# returns:
+#     true/false if the data is valid or not
+#-------------------------------------------------------------------------------
+def DataIsValidForURL(urlTag, jsonData):
+           
+#     if (urlTag == Const.Tags.Urls.UPLOAD_LOCAL):
+#         return _ValidateUploadLocal(jsonData)
+#         
+#     elif (urlTag == Const.Tags.Urls.GET_LOCAL):
+#         return _ValidateGetLocal(jsonData)
+#         
+#     elif (urlTag == Const.Tags.Urls.UPLOAD_MESSAGE):
+#         return _ValidateUploadMessage(jsonData)
+#         
+#     elif (urlTag == Const.Tags.Urls.GET_MESSAGE):
+#         return _ValidateGetMessage(jsonData)
+          
+    if (urlTag == Const.Tags.Urls.UPLOAD_LIVE):
+        return _ValidateUploadLive(jsonData)
+        
+    elif (urlTag == Const.Tags.Urls.GET_LIVE):
+        return _ValidateGetLive(jsonData)
+          
+    elif (urlTag == Const.Tags.Urls.UPLOAD_REPLY):
+        return _ValidateUploadReply(jsonData)
+        
+    elif (urlTag == Const.Tags.Urls.GET_REPLY):
+        return _ValidateGetReply(jsonData)
+        
+#     elif (urlTag == Const.Tags.Urls.MODERATION_BLOCK):
+#         return _ValidateModerationBlock(jsonData)
+    
+    elif (urlTag == Const.Tags.Urls.MODERATION_REPORT):
+        return _ValidateModerationReport(jsonData)
+        
+    elif (urlTag == Const.Tags.Urls.SECURITY_CREATE):
+        return _ValidateSecurityCreate(jsonData)
+    
+#     elif (urlTag == Const.Tags.Urls.SECURITY_GETBANINFO):
+#         return _ValidateSecurityGetBanInfo(jsonData)
+    
+    elif (urlTag == Const.Tags.Urls.SECURITY_LOGIN):
+        return _ValidateSecurityLogin(jsonData)
+    
+    elif (urlTag == Const.Tags.Urls.ANALYTICS_FEEDBACK):
+        return _ValidateAnalyticsFeedback(jsonData)
+    
+    return False
+
+# #-------------------------------------------------------------------------------
+# # DATA VALIDATION CHECKER FUNCTIONS FOR EACH URL
+# #-------------------------------------------------------------------------------
+# 
+# def _ValidateUploadLocal(jsonData):
+#     lat = jsonData[Const.Views.UploadLocalPost.JsonRequestKey.LATITUDE]
+#     long = jsonData[Const.Views.UploadLocalPost.JsonRequestKey.LONGITUDE]
+#     caption = jsonData[Const.Views.UploadLocalPost.JsonRequestKey.TEXT]
+#     url = jsonData[Const.Views.UploadLocalPost.JsonRequestKey.URL]
+#     
+#     # Check that lat and long are valid
+#     if (not _LatitudeIsValid(lat) or
+#         not _LongitudeIsValid(long)):
+#         return False
+#       
+#     # check caption and URL length
+#     if (Utils.StringExceedsMaxLength(caption, Const.Views.UploadLocalPost.TEXT_CHAR_MAX) or
+#         Utils.StringExceedsMaxLength(url, Const.Database.MaxLengths.S3_KEY)):
+#         return False
+#         
+#     
+#     return (latIsValid and longIsValid and captionIsValid and urlIsValid)
+# #------------------------------------------------------------------------------ 
+# 
+# def _ValidateGetLocal(jsonData):
+#     lat = jsonData[Const.Views.GetLocalPost.JsonRequestKey.LATITUDE]
+#     long = jsonData[Const.Views.GetLocalPost.JsonRequestKey.LONGITUDE]
+#     count = jsonData[Const.Views.GetLocalPost.JsonRequestKey.COUNT]
+#     seen = jsonData[Const.Views.GetLocalPost.JsonRequestKey.SEEN]
+#     
+#     latIsValid = _LatitudeIsValid(lat)
+#     longIsValid = _LongitudeIsValid(long) 
+#     countIsValid = Utils.IsPositiveInt(count)
+#     seenListIsValid = Utils.ArePositiveInts(seen)
+# 
+#     return (latIsValid and longIsValid and countIsValid and seenListIsValid)
+# #------------------------------------------------------------------------------ 
+# 
+# def _ValidateUploadMessage(jsonData):
+#     toUser = jsonData[Const.Views.UploadMessage.JsonRequestKey.TO_USER_ID]
+#     caption = jsonData[Const.Views.UploadMessage.JsonRequestKey.TEXT]
+#     url = jsonData[Const.Views.UploadMessage.JsonRequestKey.URL]
+#     
+#     toUserIsValid = Utils.StringIsUUID(toUser) #just check that it's a uuid for now
+#     
+#     # caption is optional
+#     if (Utils.StringExceedsMaxLength(caption, Const.Views.UploadMessage.TEXT_CHAR_MAX)):
+#         captionIsValid = False
+#     else:
+#         captionIsValid = True
+#         
+#     urlIsValid = _URLIsValid(url)
+#     
+#     return (toUserIsValid and captionIsValid and urlIsValid)
+
+# #------------------------------------------------------------------------------ 
+# 
+# def _ValidateGetMessage(jsonData):
+#     # this url has no json data (as of yet)
+#     return True
+#------------------------------------------------------------------------------ 
+
+#-------------------------------------------------------------------------------
+# _ValidateUploadLive
+#-------------------------------------------------------------------------------
+def _ValidateUploadLive(jsonData):
+    # key and arn are required
+    # text is optional
+    
+    text = jsonData[Const.Views.UploadThread.JsonRequestKey.THREAD_TEXT]
+    key = jsonData[Const.Views.UploadThread.JsonRequestKey.THREAD_URL]
+    arn = jsonData[Const.Views.UploadThread.JsonRequestKey.THREAD_ARN]
+    
+    # Check that the key exists and is valid
+    if (not _S3KeyIsValid(key)):
+        return False
+    
+    # Check that the arn exists
+    if (Utils.StringIsEmpty(arn)):
+        return False
+        
+    # If the text, or arn exceed max lengths, invalid
+    if (Utils.StringExceedsMaxLength(text, Const.Database.MaxLengths.Content.THREAD_TEXT) or 
+        Utils.StringExceedsMaxLength(arn, Const.Database.MaxLengths.AWS_ARN)):
+            return False  
+        
+    #else 
+    return True
+
+#-------------------------------------------------------------------------------
+# _ValidateGetLive
+#-------------------------------------------------------------------------------
+def _ValidateGetLive(jsonData):
+    # this url has no json data (as of yet)
+    return True
+
+#-------------------------------------------------------------------------------
+# _ValidateUploadReply
+#-------------------------------------------------------------------------------
+def _ValidateUploadReply(jsonData):  
+    # text is optional
+    # key is optional
+    # text and key cannot both be null
+    # threadID is required
+    
+    threadID = jsonData[Const.Views.UploadReply.JsonRequestKey.THREAD_ID]
+    text = jsonData[Const.Views.UploadReply.JsonRequestKey.REPLY_TEXT]
+    key = jsonData[Const.Views.UploadReply.JsonRequestKey.REPLY_URL]
+    
+    # If the key exists, check if it is valid
+    if (not Utils.StringIsEmpty(key) and not _S3KeyIsValid(key)):
+        return False
+    
+    # if threadID is empty or corrupt, invalid 
+    if (not _GravityUUIDIsValid(threadID)):
+        return False
+    
+    # if text and key are both empty, invalid
+    if (Utils.StringIsEmpty(text) and Utils.StringIsEmpty(key)):
+        return False
+    
+    # check max lengths of text  
+    if (Utils.StringExceedsMaxLength(text, Const.Database.MaxLengths.Content.REPLY_TEXT)):
+        return False
+      
+    # else
+    return True
+
+#-------------------------------------------------------------------------------
+# _ValidateGetReply
+#-------------------------------------------------------------------------------
+def _ValidateGetReply(jsonData):
+    # threadID is required
+    
+    threadID = jsonData[Const.Views.GetReply.JsonRequestKey.THREAD_ID]
+    
+    # if threadID is empty or corrupt, invalid 
+    if (not _GravityUUIDIsValid(threadID)):
+        return False
+    
+    # else
+    return True
+
+# #-------------------------------------------------------------------------------
+# # _ValidateModerationBlock
+# #-------------------------------------------------------------------------------
+# def _ValidateModerationBlock(jsonData):
+#     userToBlock = jsonData[Const.Views.Block.JsonRequestKey.USER_TO_BLOCK_ID]        
+#     userToBlockIsValid = Utils.StringIsUUID(userToBlock)
+#         
+#     return (userToBlockIsValid)
+
+#-------------------------------------------------------------------------------
+# _ValidateModerationReport
+#-------------------------------------------------------------------------------
+def _ValidateModerationReport(jsonData):
+    # contentID is required
+    
+    contentID = jsonData[Const.Views.Report.JsonRequestKey.CONTENT_ID]
+
+    # if threadID is empty or corrupt, invalid 
+    if (not _GravityUUIDIsValid(contentID)):
+        return False
+    
+    # else
+    return True 
+
+#-------------------------------------------------------------------------------
+# _ValidateSecurityCreate
+#-------------------------------------------------------------------------------
+def _ValidateSecurityCreate(jsonData):
+    # this url has no json data (as of yet)
+    return True
+
+# #-------------------------------------------------------------------------------
+# # _ValidateSecurityGetBanInfo
+# #-------------------------------------------------------------------------------
+# def _ValidateSecurityGetBanInfo(jsonData):
+#     # this url has no json data (as of yet)
+#     return True  
+
+#-------------------------------------------------------------------------------
+# _ValidateSecurityLogin
+#-------------------------------------------------------------------------------
+def _ValidateSecurityLogin(jsonData):
+    return True
+
+#-------------------------------------------------------------------------------
+# _ValidateAnalyticsFeedback
+#-------------------------------------------------------------------------------
+def _ValidateAnalyticsFeedback(jsonData):
+    # text is required
+    
+    text = jsonData[Const.Views.AnalyticsFeedback.JsonRequestKey.TEXT]
+    
+    # check length of text
+    if (Utils.StringExceedsMaxLength(text, Const.Database.MaxLengths.Analytics.FEEDBACK)):
+        return False
+    
+    return True
+
+#-------------------------------------------------------------------------------
+# DATA VALIDATION HELPER FUNCTIONS
+# Determine if a certain piece of info is valid or not (general, not related 
+# to any url)
+#-------------------------------------------------------------------------------
+
+# Check if latitude is a number between -90 and 90
+def _LatitudeIsValid(lat):
+    try:
+        lat = int(lat)
+        if (lat > 90.0 or lat < -90.0):
+            return False
+        return True
+    except Exception:
+        return False
+ 
+# Check if longitude is a number between -180 and 180  
+def _LongitudeIsValid(long):
+    try:
+        long = int(long)
+        if (long > 180.0 or long < -180.0):
+            return False
+        return True
+    except Exception:
+        return False
+    
+# Checks if one of 'our' server uuids are valid/in the right format
+def _GravityUUIDIsValid(uuid):
+    try:
+        # Check length
+        if (len(uuid) == Const.Database.MaxLengths.UUID):
+            # also check if it is in hex (throws exeception if not)
+            unhexlify(uuid)
+            return True
+        #else
+        return False
+    except Exception:
+        return False
+
+# Checks if the s3 key is valid. Checks the syntax only, not the actual
+# presence of the object with amazon
+def _S3KeyIsValid(key):
+    if (Utils.StringIsUUID(key)):
+        return True
+    # else
+    return False
+    
+    
+
+
+
+    
+
+
+

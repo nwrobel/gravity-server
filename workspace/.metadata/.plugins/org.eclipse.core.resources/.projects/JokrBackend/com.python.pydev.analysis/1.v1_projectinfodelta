@@ -1,0 +1,6 @@
+INSTUPJokrBackend.GCMManager
+/var/webserver/JokrBackend/JokrBackend/GCMManager.py
+INFOS:&&2|1|2|0&&2|3|2|0
+JokrBackend.GCMManager=2
+SubscribeUserToThread=1
+BroadcastReplyToSubscribers=3

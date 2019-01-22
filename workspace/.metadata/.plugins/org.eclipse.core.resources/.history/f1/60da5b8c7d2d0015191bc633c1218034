@@ -1,0 +1,54 @@
+#===============================================================================
+# Command that removes all local messages from the database that are older than 
+# 'x' minutes. This is to be executed within PruneLocalMessagesScript, which
+# is run in the cron at a specified interval.
+#
+# Nick Wrobel
+# Created: 7/18/15
+# Modified: 7/18/15 
+#===============================================================================
+
+from Boomerang.Models.LocalMessageModel import LocalMessage
+from django.core.management import BaseCommand
+from django.conf import settings
+import logging
+import os
+import time
+
+#------------------------------------------------------------------------------ 
+# CONSTANTS
+AGE_TOLERANCE_HOUR = 24 # How old a local message can be before it is pruned 
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+#------------------------------------------------------------------------------ 
+# PROCEDURE
+
+# Create a class Command to use django manage command functionality
+class Command(BaseCommand):
+    # A command must define handle(), all work happens here
+    def handle(self, *args, **options):
+        
+        query = '' # Database query to get old messages
+        currentTime = 0 # Current time on server end
+        oldestTimeAllowed= 0 # Oldest timestamp (smallest int) a message must have to avoid being pruned
+        numMesagesDeleted = 0 # Number of local messages we have pruned
+        localMessagesToDelete = [] # Queryset of messages to be deleted
+        
+        query = """SELECT id, time , image FROM Boomerang_localmessage
+                    WHERE time < %s"""
+        currentTime = time.time()
+        oldestTimeAllowed = currentTime - (int(AGE_TOLERANCE_HOUR) * 3600)      
+        localMessagesToDelete = LocalPost.objects.raw(query, [oldestTimeAllowed])
+        
+        # For each localpost to be pruned, remove its underlying file and remove
+        # it from the db
+        for lp in localPostsToDelete:
+            filename = settings.MEDIA_ROOT + lp.image.name
+            os.remove(filename)
+            lp.delete()
+            numPostsDeleted += 1
+        
+        logger.info('Pruning run: ' + str(numPostsDeleted) + ' localposts deleted')
+            

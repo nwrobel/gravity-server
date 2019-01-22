@@ -1,0 +1,437 @@
+#-------------------------------------------------------------------------------
+# SecurityChecker 
+# This module contains methods that check for security errors in any incoming 
+# URL (including those that are a 404). Think of this as the security guard
+# checking your ID when you enter the building.
+#
+# Nick Wrobel
+# Created: 9/24/15
+# Modified: 9/24/15 
+#-------------------------------------------------------------------------------
+
+import time
+import simplejson as json
+from django.db import transaction
+import JokrBackend.Constants as Const
+from JokrBackend.Custom.Utils import ConvertUUIDToBinary
+from JokrBackend.Models.UserModel import User
+from JokrBackend.Security.SecurityProperties import SecurityProperties
+from JokrBackend.Security import SecurityActuator
+
+#------------------------------------------------------------------------------ 
+# RunThroughSecurityLayer
+# Runs the request data for a URL through the security layer.
+# Does a low level security check and then a data validation check.
+# If there is a security issue, then the SecurityActuator module is called
+# to take action.
+# 
+# params: 
+#    urlName - the name of the URL, should be a constant (404 name if the url is a 404)
+#    urlRequestData - the raw url request data handed down from the View
+# returns: 
+#     securityProperties - an object with various properties
+#------------------------------------------------------------------------------ 
+def RunThroughSecurityLayer(urlName, urlRequestData):
+    # If the URL is a 404 (comes from the 404 Handler View), then skip the 
+    # security checking and perform security action
+    if (urlName == Const.URL_404_NAME):
+        securityProperties = SecurityProperties()
+        securityProperties.isSecure = False
+        securityProperties.had404 = True
+        SecurityActuator.TakeSecurityAction(securityProperties)
+        
+    # Else, the URL is one of the valid URLs. Do a full check
+    else:
+        securityProperties = _CheckURLForSecurity(urlName, urlRequestData) 
+        # If we have not failed and there is any json data to check, check it
+        if (securityProperties.isSecure and securityProperties.jsonRequestData):
+            securityProperties.hadDataValidationFail = not _DataIsValidForURL(urlName, securityProperties.jsonRequestData)
+            if (securityProperties.hadDataValidationFail):
+                securityProperties.isSecure = False
+       
+        # If there is a security issue, perform the security action
+        if (not securityProperties.isSecure):
+            SecurityActuator.TakeSecurityAction(securityProperties)
+        
+    return securityProperties
+        
+#-------------------------------------------------------------------------------
+# _CheckURLForSecurity
+# Private method to do sort of a low level security check. Whether or not a 
+# request is secure depends on the URL in question, but in general we are going
+# to check for things like correct client authentication, correct request 
+# method, and correct json.
+# 
+# params:
+#     urlName - the name of the URL, a constant
+#     urlRequestData - the raw request data sent to the URL
+# returns:
+#    securityProperties - a class object meant to hold info about the client and
+#                            the results of the security test
+#-------------------------------------------------------------------------------
+def _CheckURLForSecurity(urlName, urlRequestData):
+    
+    # Get client IP address and request method
+    clientIP = urlRequestData.META['REMOTE_ADDR']
+    requestMethod = urlRequestData.method
+    requestedURL = urlRequestData.path
+    if ('CONTENT_TYPE' in urlRequestData.META):
+        requestContentType = urlRequestData.META['CONTENT_TYPE']
+    isSecure = True
+    
+    
+    # Begin building the security properties object
+    securityProperties = SecurityProperties()
+    securityProperties.clientIP = clientIP
+    securityProperties.requestMethod = requestMethod
+    securityProperties.requestedURL = requestedURL
+        
+    # If we are doing /InitializeUser/, then do some different checks
+    if urlName == Const.InitializeUser.NAME:
+        # Check the request method
+        if (not _RequestMethodIsValid(urlName, requestMethod)):
+            isSecure = False
+            securityProperties.hadBadRequestMethod = True
+            
+    # Else, do stuff for all the other views
+    else: 
+        
+        # Check client's UUID
+        clientUUIDCheck = _GetClientUserObject(urlRequestData)
+        if (clientUUIDCheck == 0):
+            isSecure = False
+            securityProperties.hadNoClientID = True
+        elif (clientUUIDCheck == 1):
+            isSecure = False
+            securityProperties.hadBadClientID = True   
+        else:
+            securityProperties.clientUserObject = clientUUIDCheck 
+            
+        # Check the request method      
+        if (not _RequestMethodIsValid(urlName, requestMethod)):
+            isSecure = False
+            securityProperties.hadBadRequestMethod = True
+        
+                                          
+        # Check the content type header
+        if (not _ContentTypeIsValid(requestContentType)):
+            isSecure = False
+            securityProperties.hadBadContentType = True
+          
+        # Try to get the decoded json data
+        decodedJsonData = _GetDecodedJsonData(urlRequestData)
+        if (decodedJsonData == 0):
+            # If malformed, we have to leave early
+            securityProperties.isSecure = False
+            securityProperties.hadMalformedJson = True           
+            return securityProperties 
+        else:
+            securityProperties.jsonRequestData = decodedJsonData
+        
+
+ 
+                
+    if not isSecure:
+        securityProperties.isSecure = False
+    else:
+        securityProperties.isSecure = True
+        
+    return securityProperties
+
+#-------------------------------------------------------------------------------
+# _RequestMethodIsValid
+# Checks if the request method for a URL is valid
+#
+# params: 
+#    urlName - the URL name
+#    requestMethod - the method used in the request
+# returns:
+#    T/F if the request method is valid
+#-------------------------------------------------------------------------------
+def _RequestMethodIsValid(urlName, requestMethod):
+    if (urlName == Const.InitializeUser.NAME):
+        if requestMethod != 'GET':
+            return False
+        else:
+            return True
+    else:
+        if requestMethod != 'POST':
+            return False
+        else:
+            return True
+        
+#-------------------------------------------------------------------------------
+# _ContentTypeIsValid
+# Checks if the content-type header used in a URL is valid
+#
+# params: 
+#    contentType - the content type header used
+# returns:
+#    T/F if the content type is valid
+#-------------------------------------------------------------------------------
+def _ContentTypeIsValid(contentType):
+    return ('application/json' in contentType)
+        
+#-------------------------------------------------------------------------------
+# _GetClientUserObject
+# Checks if the client's UUID (in the header) is valid or not
+# If the user is valid, then the timestamp for the user (timeLastUsed) is also 
+# updated
+#
+# params: 
+#     urlRequestData - the request data
+# returns:
+#    user - the client user object if the UUID was valid/secure
+#    0 - UUID not found in the header
+#    1 - UUID was bad/invalid/insecure
+#-------------------------------------------------------------------------------
+def _GetClientUserObject(urlRequestData):
+    # Get the client ID from the header
+    # Check that the client's UUID is in the database 
+    try: 
+        uuid = urlRequestData.META[Const.USERID_HEADER_NAME]
+        clientUUIDBinary = ConvertUUIDToBinary(str(uuid))
+        
+        user = User.objects.get(uuid=clientUUIDBinary)
+       
+        # Update timestamp
+        with transaction.atomic():
+            user.timeLastUsed = time.time()
+            user.save()
+        
+        # return the user object
+        return user
+    
+    # KeyError means that our custom UUID header was not present
+    except KeyError:
+        return 0
+    
+    # Other exception=bad uuid              
+    except Exception:
+        return 1
+    
+#-------------------------------------------------------------------------------
+# _GetDecodedJsonData
+# Tries to decode the json data 
+#
+# params: 
+#    urlRequestData - the request data for the URL
+# returns:
+#    decodedJsonData - the decoded data
+#    0 - failed to decode the data
+#-------------------------------------------------------------------------------
+def _GetDecodedJsonData(urlRequestData):
+    try:
+        decodedJsonData = json.loads(urlRequestData.read().decode()) 
+        return decodedJsonData
+    
+    except Exception:
+        return 0
+        
+#-------------------------------------------------------------------------------
+# _JsonParamsAreValid
+# Checks whether or not the json keys that were sent are valid or not 
+#
+# params: 
+#    urlName - the name of the URL
+#    decodedRequestData - the decoded json dictionary
+# returns:
+#    0 - okay
+#    1 - wrong number of json params
+#-------------------------------------------------------------------------------
+def _JsonParamsAreValid(urlName, decodedRequestData):
+    
+    # Check that there are no extra json parameters
+    requiredParams = _GetRequiredParamsList(urlName)
+    requiredParamsLength = int(len(list(requiredParams)))
+    actualParamsLength = int(len(list(decodedRequestData)))
+
+    if requiredParamsLength != actualParamsLength:
+        isSecure = False
+        securityProperties.hadWrongNumberOfJsonParamters = True
+    
+    # Check that all required parameters are present
+    for param in requiredParams:
+        try:
+            requestJsonData[param]
+        except Exception:
+            isSecure = False
+            securityProperties.hadInvalidJsonParameters = True
+
+#-------------------------------------------------------------------------------
+# _GetRequiredParamsList
+# Private method to return the list of required json parameters for one of 
+# our valid URLs. Simply a constant lookup.
+#
+# params: 
+#     urlName - name of the URL
+# returns: 
+#     list of strings representing the required json keys
+#-------------------------------------------------------------------------------
+def _GetRequiredParamsList(urlName):
+    if (urlName == Const.InitializeUser.NAME):
+        return Const.InitializeUser.REQUIRED_PARAMS
+    elif (urlName == Const.UploadLocalPost.NAME):
+        return Const.UploadLocalPost.REQUIRED_PARAMS
+    elif (urlName == Const.GetLocalPosts.NAME):
+        return Const.GetLocalPosts.REQUIRED_PARAMS
+    elif (urlName == Const.SendLocalMessage.NAME):
+        return Const.SendLocalMessage.REQUIRED_PARAMS
+    elif (urlName == Const.GetLocalMessages.NAME):
+        return Const.GetLocalMessages.REQUIRED_PARAMS
+    elif (urlName == Const.BlockLocalUser.NAME):
+        return Const.BlockLocalUser.REQUIRED_PARAMS
+    elif (urlName == Const.CreateLiveThread.NAME):
+        return Const.CreateLiveThread.REQUIRED_PARAMS
+    elif (urlName == Const.ReplyToLiveThread.NAME):
+        return Const.ReplyToLiveThread.REQUIRED_PARAMS
+    elif (urlName == Const.GetLiveThreadList.NAME):
+        return Const.GetLiveThreadList.REQUIRED_PARAMS
+    elif (urlName == Const.GetLiveThreadInfo.NAME):
+        return Const.GetLiveThreadInfo.REQUIRED_PARAMS
+    elif (urlName == Const.GetLiveThreadReplies.NAME):
+        return Const.GetLiveThreadReplies.REQUIRED_PARAMS
+    
+    return ''
+
+#-------------------------------------------------------------------------------
+# _DataIsValidForURL
+# Does data validation for one of our valid URLs. 
+# 
+# params:
+#     urlName - name of the URL
+# returns:
+#     true/false if the data is valid or not
+#-------------------------------------------------------------------------------
+def _DataIsValidForURL(urlName, jsonRequestData):
+        
+    dataIsValid = False
+     
+    if urlName == Const.InitializeUser.NAME:
+        # Nothing to do here
+        pass
+    elif urlName == Const.UploadLocalPost.NAME:
+        dataIsValid = (_LatitudeIsValid(jsonRequestData[Const.UploadLocalPost.JsonRequestKey.LATITUDE]) and
+                    _LongitudeIsValid(jsonRequestData[Const.UploadLocalPost.JsonRequestKey.LONGITUDE]) and
+                    _RotationIsValid(jsonRequestData[Const.UploadLocalPost.JsonRequestKey.ROTATION]) and 
+                    _ImageStringIsValid(jsonRequestData[Const.UploadLocalPost.JsonRequestKey.IMAGE])) 
+         
+    elif urlName == Const.GetLocalPosts.NAME:
+        dataIsValid = (_LatitudeIsValid(jsonRequestData[Const.GetLocalPosts.JsonRequestKey.LATITUDE]) and
+                    _LongitudeIsValid(jsonRequestData[Const.GetLocalPosts.JsonRequestKey.LONGITUDE] and
+                    _CountIsValid(jsonRequestData[Const.GetLocalPosts.JsonRequestKey.COUNT]) and 
+                    _SeenListIsValid(jsonRequestData[Const.GetLocalPosts.JsonRequestKey.SEEN])))   
+         
+    elif urlName == Const.BlockLocalUser.NAME:
+        dataIsValid = (_UserUUIDIsValid(jsonRequestData[Const.BlockLocalUser.JsonRequestKey.USER_TO_BLOCK_ID])) 
+         
+    elif urlName == Const.SendLocalMessage.NAME:
+        dataIsValid = (_UserUUIDIsValid(jsonRequestData[Const.SendLocalMessage.JsonRequestKey.TO_USER_ID]) and 
+                    _ImageStringIsValid(jsonRequestData[Const.SendLocalMessage.JsonRequestKey.IMAGE])) 
+        
+    elif urlName == Const.GetLocalMessages.NAME:
+        # Nothing to do here
+        return True 
+          
+    elif urlName == Const.CreateLiveThread.NAME:
+        dataIsValid = (_ThreadTitleIsValid(jsonRequestData[Const.CreateLiveThread.JsonRequestKey.THREAD_TITLE]) and
+                    _ThreadNameIsValid(jsonRequestData[Const.CreateLiveThread.JsonRequestKey.THREAD_NAME]) and
+                    _ThreadTextIsValid(jsonRequestData[Const.CreateLiveThread.JsonRequestKey.THREAD_TEXT]) and 
+                    _ImageStringIsValid(jsonRequestData[Const.CreateLiveThread.JsonRequestKey.THREAD_IMAGE])) 
+         
+    elif urlName == Const.ReplyToLiveThread.NAME:
+        dataIsValid = (_ThreadIDIsValid(jsonRequestData[Const.ReplyToLiveThread.JsonRequestKey.THREAD_ID]) and
+                    _ReplyNameIsValid(jsonRequestData[Const.ReplyToLiveThread.JsonRequestKey.REPLY_NAME]) and
+                    _ReplyTextIsValid(jsonRequestData[Const.ReplyToLiveThread.JsonRequestKey.REPLY_TEXT]) and 
+                    _ImageStringIsValid(jsonRequestData[Const.ReplyToLiveThread.JsonRequestKey.REPLY_IMAGE])) 
+  
+    elif urlName == Const.GetLiveThreadList.NAME:
+        #nothing to do here
+        return True  
+     
+    elif urlName == Const.GetLiveThreadInfo.NAME:
+        dataIsValid = _ThreadIDIsValid(jsonRequestData[Const.GetLiveThreadInfo.JsonRequestKey.THREAD_ID])
+  
+    elif urlName == Const.GetLiveThreadReplies.NAME:
+        dataIsValid = _ThreadIDIsValid(jsonRequestData[Const.GetLiveThreadReplies.JsonRequestKey.THREAD_ID]) 
+    
+    return dataIsValid
+     
+#-------------------------------------------------------------------------------
+# DATA VALIDATION HELPER FUNCTIONS
+# Determine if a certain piece of info is valid or not
+#-------------------------------------------------------------------------------
+def _LatitudeIsValid(lat):
+    try:
+        lat = int(lat)
+        if (lat > 90.0 or lat < -90.0):
+            return False
+        return True
+    except Exception:
+        return False
+    
+def _LongitudeIsValid(long):
+    try:
+        long = int(long)
+        if (long > 180.0 or long < -180.0):
+            return False
+        return True
+    except Exception:
+        return False
+ 
+def _RotationIsValid(rotation):
+    try:
+        rotation = int(rotation)
+        if(rotation < 0 or rotation > 2):
+            return False
+        return True
+    except Exception:
+        return False
+ 
+def _CountIsValid(count):
+    if((not isinstance(count, int)) or count < 1):
+        return False
+    return True
+
+def _SeenListIsValid(seenList):
+    try:
+        seenList = list(seenList)
+        for num in seenList:
+            if(not isinstance(num, int) or id < 1):
+                return False
+    except Exception:
+        return False
+    return True
+    
+def _UserUUIDIsValid(user):
+    return True
+
+def _ThreadTitleIsValid(threadTitle):
+    return True
+
+def _ThreadNameIsValid(threadName):
+    return True
+
+def _ThreadTextIsValid(threadText):
+    return True
+
+def _ThreadIDIsValid(threadID):
+    return True
+
+def _ReplyNameIsValid(replyName):
+    return True
+
+def _ReplyTextIsValid(replyText):
+    return True
+
+def _ImageStringIsValid(img):
+    return True
+
+
+    
+    
+    
+    
+    
+    
+     

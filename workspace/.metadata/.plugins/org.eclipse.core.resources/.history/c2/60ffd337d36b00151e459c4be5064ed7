@@ -1,0 +1,27 @@
+import time
+
+class SecurityProperties:
+    def __init__(self):
+        # Info for logging
+        self.clientIP = '' 
+        self.timestamp = time.time()
+        self.requestedURL = ''
+        self.requestMethod = ''
+               
+        # Info extracted about the client, for optimization
+        self.clientUserObject = None # DB object of the client        
+        self.jsonRequestData = {} # Decoded dictionary of json params
+        
+        # Info on security and possible security issues
+        self.isSecure = False # Is there a security issue? VERY IMPORTANT
+        self.had404 = False
+        self.hadBadClientID = False
+        self.hadBadRequestMethod = False
+        self.hadBadContentType = False
+        self.hadMalformedJson = False
+        self.hadInvalidJsonParameters = False
+        self.hadWrongNumberOfJsonParamters = False
+        self.hadDataValidationFail = False
+        
+        
+    

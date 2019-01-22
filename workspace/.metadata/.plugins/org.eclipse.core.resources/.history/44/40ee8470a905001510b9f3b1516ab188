@@ -1,0 +1,26 @@
+"""
+WSGI config for Boomerang project.
+
+It exposes the WSGI callable as a module-level variable named ``application``.
+"
+For more information on this file, see
+https://docs.djangoproject.com/en/1.8/howto/deployment/wsgi/
+"""
+
+import os
+import site
+import sys
+
+from django.core.wsgi import get_wsgi_application
+
+# Add the site-packages of the chosen virtualenv to work with
+# site.addsitedir('/var/webserver/env/lib/python3.4/site-packages')
+# sys.path.append('/var/webserver/env/lib/python3.4/site-packages/PIL')
+
+# Add the app's directory to the PYTHONPATH
+# sys.path.append('/var/webserver/Boomerang')
+# sys.path.append('/var/webserver/Boomerang/Boomerang')
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Boomerang.Settings.settings_production")
+
+application = get_wsgi_application()

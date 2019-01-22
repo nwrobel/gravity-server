@@ -1,0 +1,17 @@
+#===============================================================================
+# Model for a user-user block on the local feed
+# 
+# Nick Wrobel 
+# Created: 7/16/15
+# Modified: 7/16/15
+#===============================================================================
+
+from django.db import models
+from JokrBackend.Models.Content.UserModel import User
+
+class Block(models.Model):
+    blocker = models.ForeignKey(User, related_name='blocker', default=None, null=False)
+    blocked = models.ForeignKey(User, related_name='blocked', default=None, null=False)
+    timeCreated = models.IntegerField(default=None, null=False)
+    
+    _DATABASE = 'content_db'

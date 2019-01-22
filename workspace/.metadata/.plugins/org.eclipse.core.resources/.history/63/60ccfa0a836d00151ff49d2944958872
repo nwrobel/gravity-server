@@ -1,0 +1,57 @@
+#===============================================================================
+# GetThreadView
+# Returns to the client a snapshot of all the threads on a board at a given
+# time. Only threads and their metadata is returned, not replies.
+#
+# Nick Wrobel
+# Created: 7/20/15
+# Modified: 10/8/15
+#===============================================================================
+
+from django.views.decorators.csrf import csrf_exempt
+import logging
+import simplejson as json
+from JokrBackend.Custom.ClientObjects.GetThreadClientObject import GetThreadClientObject
+from JokrBackend.Models.LiveThreadModel import LiveThread
+import JokrBackend.Constants as Const
+from JokrBackend.Custom import HttpResponseFactory
+from JokrBackend.Security.SecurityChecker import RunThroughSecurityLayer 
+
+# Set up the logging
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+def GetThread(requestData):
+          
+    securityProperties = RunThroughSecurityLayer(Const.Views.GetThread.TAG, requestData)
+    if (not securityProperties.isSecure):
+        return HttpResponseFactory.MakeSecurityErrorHttpResponse(securityProperties)
+        
+#------------------------------------------------------------------------------ 
+# Retrieve all threads
+
+    try:
+        # Retrieve in decending order of timeLastReply
+        threads = LiveThread.objects.all().order_by('-timeOfLastReply')
+    except Exception:
+        logger.error(Const.Views.GetThread.Messages.E000)
+        return HttpResponseFactory.MakeHttpResponse(422, Const.Views.GetThread.Messages.E000)
+    
+#------------------------------------------------------------------------------ 
+# Get the stuff we need from the thread, package and return to the client
+
+    try:
+        clientThreadsToReturn = []
+        for thread in threads:
+            objectToReturn = GetThreadClientObject(thread.title, thread.opName, thread.text, thread.timeCreated, thread.replyCount, thread.uniquePostersCount, threadImage) 
+            clientThreadsToReturn.append(objectToReturn)      
+        jsonString = json.dumps(threadInfoObjectToReturn.getOrderedDict())
+
+    except Exception:
+        logger.error(Const.GetLiveThreadInfo.Messages.E001)
+        return HttpResponseFactory.MakeHttpResponse(500, Const.GetLiveThreadInfo.Messages.E001)
+        
+           
+    logger.info(Const.GetLiveThreadInfo.Messages.I000)
+                     
+    return HttpResponseFactory.MakeHttpResponse(200, jsonString, 'application/json')

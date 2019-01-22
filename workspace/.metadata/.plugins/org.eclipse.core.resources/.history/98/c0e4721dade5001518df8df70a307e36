@@ -1,0 +1,11 @@
+from django.core.management import BaseCommand
+
+
+class Command(BaseCommand): 
+#-------------------------------------------------------------------------------
+# handle
+# the 'main method'
+#-------------------------------------------------------------------------------
+    def handle(self, *args, **options): 
+        pass
+        

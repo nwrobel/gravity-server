@@ -1,0 +1,106 @@
+#-------------------------------------------------------------------------------
+# Content archival module
+#
+# Nick Wrobel
+# Created: 12/12/15
+# Modified: 12/12/15
+#-------------------------------------------------------------------------------
+from JokrBackend.Models.ContentModels import PostableContent, ArchivedPostableContent, LocalPost, Message, Thread, Reply, LocalPostArchive, MessageArchive, ThreadArchive, ReplyArchive
+import JokrBackend.Custom.StaticContentUtils as StaticContentUtils
+import JokrBackend.Constants as Const
+from django.core.exceptions import ObjectDoesNotExist
+
+def ArchiveContent(cid):
+    content = PostableContent.objects.get(pk=cid)
+     
+    if (content.contentType == Const.Tags.ContentTypes.LOCALPOST):
+        _ArchiveLocalPost(content)
+        
+    elif (content.contentType == Const.Tags.ContentTypes.MESSAGE):
+        _ArchiveMessage(content)
+        
+    elif (content.contentType == Const.Tags.ContentTypes.THREAD):
+        _ArchiveThread(content)
+        
+    elif (content.contentType == Const.Tags.ContentTypes.REPLY):
+        _ArchiveReply(content)
+      
+                                                                
+def _ArchiveLocalPost(content):
+    localPost = LocalPost.objects.get(pk=content.id)
+    
+    # Check if the post exists in the archive
+    archivedPost = ArchivedPostableContent.objects.filter(pk=content.id)
+        
+    # If it does not exist, continue
+    if (not archivedPost):     
+        newLocalPostArchive = LocalPostArchive.objects.create(timeCreated=content.timeCreated,
+                                                            fromUser=content.fromUser,
+                                                            contentType=content.contentType,
+                                                            url=content.url,
+                                                            latitude=localPost.latitude,
+                                                            longitude=localPost.longitude,
+                                                            text=localPost.text)
+
+    # S3 operations
+    StaticContentUtils.ArchiveStaticContent(content.contentType, content.url)
+
+def _ArchiveMessage(content):
+    message = Message.objects.get(pk=content.id)
+    newMessageArchive = MessageArchive.objects.create(timeCreated=content.timeCreated,
+                                                        fromUser=content.fromUser,
+                                                        contentType=content.contentType,
+                                                        url=content.url,
+                                                        toUser=message.toUser,
+                                                        text=message.text)
+    
+    # S3 operations
+    StaticContentUtils.ArchiveStaticContent(content.contentType, content.url)
+
+def _ArchiveThread(content):
+    thread = Thread.objects.get(pk=content.id)
+    newThreadArchive = ThreadArchive.objects.create(timeCreated=content.timeCreated,
+                                                                fromUser=content.fromUser,
+                                                                contentType=content.contentType,
+                                                                url=content.url,
+                                                                name=thread.name,
+                                                                title=thread.title,
+                                                                text=thread.text,
+                                                                replyCount=thread.replyCount,
+                                                                uniquePostersCount=thread.uniquePostersCount,
+                                                                imageReplyCount=thread.imageReplyCount)
+        
+        # Get the thread replies, and also archive these
+        replies = Reply.objects.filter(parentThread=thread)
+        
+        # Create a new reply archive for each reply in the archived thread
+        for reply in replies:
+            ReplyArchive.objects.create(timeCreated=reply.timeCreated,
+                                        fromUser=reply.fromUser,
+                                        contentType=reply.contentType,
+                                        url=reply.url,
+                                        name=reply.name,
+                                        text=reply.text,
+                                        parentThread=newThreadArchive)
+
+def _ArchiveReply(content):
+        reply = Reply.objects.get(pk=cid)
+        
+        # check if the parent thread of this reply has been archived yet
+        try:
+            archivedThread = ThreadArchive.objects.get(pk=reply.parentThread)
+        except ObjectDoesNotExist:
+            # If the parent thread is not yet archived, then we need to create ot
+        
+        newReplyArchive = ReplyArchive.objects.create(timeCreated=content.timeCreated,
+                                                                fromUser=content.fromUser,
+                                                                contentType=content.contentType,
+                                                                url=content.url,
+                                                                name=reply.name,
+                                                                text=reply.text,
+                                                                replyCount=thread.replyCount,
+                                                                uniquePostersCount=thread.uniquePostersCount,
+                                                                imageReplyCount=thread.imageReplyCount)
+        
+    
+    

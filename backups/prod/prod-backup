@@ -1,0 +1,27 @@
+# /bin/bash
+# Production environment backup file.
+# Nick Wrobel, 1/8/16
+
+TIME=`date +%Y-%m-%d:%H:%M:%S`
+FILENAME=prod-backup-$TIME.tar.gz    # Define the filename
+DESDIR=/var/webserver/backups/prod    # Destination of backup file.
+
+# Dump the cron into a file
+crontab -u nick -l > cron
+
+tar -cpzf $DESDIR/$FILENAME \
+  /etc/nginx \
+  /etc/init/gunicorn.conf \
+  /etc/mysql/my.cnf \
+  ./cron \
+  /home/nick/.profile \
+  /home/nick/.vimrc \
+  /home/nick/.Xresources \
+  /home/nick/.vim \
+  /home/nick/.aws
+
+rm cron
+
+sudo chown nick:admin $DESDIR/$FILENAME
+sudo chmod 740 $DESDIR/$FILENAME
+  

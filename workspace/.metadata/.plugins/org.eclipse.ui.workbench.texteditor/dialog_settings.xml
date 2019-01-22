@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
+		<item value="310" key="DIALOG_WIDTH"/>
+		<item value="113" key="DIALOG_Y_ORIGIN"/>
+		<item value="1218" key="DIALOG_X_ORIGIN"/>
+		<item value="772" key="DIALOG_HEIGHT"/>
+		<item value="1|Ubuntu|11.0|0|GTK|1|" key="DIALOG_FONT_NAME"/>
+	</section>
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
+		<item value="true" key="wrap"/>
+		<item value="true" key="casesensitive"/>
+		<item value="false" key="isRegEx"/>
+		<item value="false" key="incremental"/>
+		<item value="false" key="wholeword"/>
+		<item value="GetExceptionInfo" key="selection"/>
+		<list key="findhistory">
+			<item value="GetExceptionInfo"/>
+			<item value="contentID"/>
+			<item value="pk="/>
+			<item value="GetObject"/>
+			<item value="QueryManager"/>
+			<item value="time.time"/>
+			<item value="timestamp"/>
+			<item value="Security.User"/>
+		</list>
+		<list key="replacehistory">
+			<item value="self.contentID"/>
+			<item value="id="/>
+			<item value="Utils.CreateTimestampForDB"/>
+			<item value="User"/>
+			<item value="UUIDField"/>
+			<item value="_"/>
+			<item value="Utils.PrintStartLine()"/>
+			<item value="Utils.PrintEndLine()"/>
+		</list>
+	</section>
+</section>

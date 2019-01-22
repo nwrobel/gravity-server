@@ -1,0 +1,330 @@
+#===============================================================================
+# Module for all models
+# 
+# Nick Wrobel
+# Created: 4/27/15
+# Modified: 1/5/16
+#===============================================================================
+
+import time 
+from django.db import models
+import JokrBackend.Constants as Const
+import JokrBackend.Custom.Utils as Utils
+from JokrBackend.Custom.ModelFields import UUIDBinaryField
+
+#*******************************************************************************
+# Client Analytics models
+# Useful for behavior and usage tracking.
+#*******************************************************************************
+    
+#*******************************************************************************
+# Logging models
+# Used for logging of server-side events
+#*******************************************************************************
+class Logging:
+    class ThreadPrunedEvent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)  
+        timeThreadPruned = models.IntegerField(default=None, null=False)
+        threadID = UUIDBinaryField(default=None, null=False)
+    
+        class Meta:
+            db_table = Const.Database.TableNames.Logging.THREAD_PRUNED
+        
+    class LocalPostsPrunedEvent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+        messageCode = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.MESSAGE_CODE)
+         
+        numOldPosts = models.IntegerField(default=None, null=False)
+        numDeletedPosts = models.IntegerField(default=None, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Logging.LOCALPOSTS_PRUNED
+         
+    class MessagesPrunedEvent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+        messageCode = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.MESSAGE_CODE)
+         
+        numOldMessages = models.IntegerField(default=None, null=False)
+        numDeletedMessages = models.IntegerField(default=None, null=False)
+               
+        class Meta:
+            db_table = Const.Database.TableNames.Logging.MESSAGES_PRUNED
+             
+    class StaticContentPrunedEvent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+        messageCode = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.MESSAGE_CODE)
+         
+        numRequestedForDeleteion = models.IntegerField(default=None, null=False)
+        numDeleted = models.IntegerField(default=None, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Logging.STATIC_CONTENT_PRUNED
+             
+    class NotificationSentEvent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+        messageCode = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.MESSAGE_CODE)
+         
+        deliveryType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Analytics.NOTIFICATION_DELIVERY_TYPE)
+        notificationType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Analytics.NOTIFICATION_TYPE)
+        numCollapsedNotifcations = models.IntegerField(default=None, null=False) # how many 'notifications' are bundled into this one (many server errors sent in one email, for ex)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Logging.NOTIFICATION_SENT
+
+#*******************************************************************************
+# Security Models
+# Models used for client tracking and security
+#*******************************************************************************
+class Security:
+    class User(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+        timeLastUsed = models.IntegerField(db_index=True, default=time.time, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Security.USER
+            
+    class Session(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=None, null=False)
+        timeExpires = models.IntegerField(default=None, null=False)
+        timeEnded = models.IntegerField(default=None, null=False)
+        token = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Security.SESSION_TOKEN)
+        fromUser = models.ForeignKey(User, related_name='+', default=None, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Security.SESSION
+            
+    class Hit(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=None, null=False)
+        url = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Security.ERROR_REQUESTED_URL)
+        responseCode = models.SmallIntegerField(default=None, null=False)
+        messageCode = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.MESSAGE_CODE)
+        ip = models.GenericIPAddressField(protocol='both', unpack_ipv4=False, default=None, null=False)
+        session = models.ForeignKey(Session, related_name='+', default=None, null=False)
+
+        class Meta:
+            db_table = Const.Database.TableNames.Security.HIT
+            
+    class SecurityErrorHit(Hit):
+        id = models.OneToOneField(OnlineContent, parent_link=True)
+        requestMethod = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Security.ERROR_REQUEST_METHOD)
+        requestContentType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Security.ERROR_REQUEST_CONTENT_TYPE)
+        requestData = models.TextField(default=None, null=False) 
+        errors = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Security.ERROR_CHECK_RESULT)
+   
+        class Meta:
+            db_table = Const.Database.TableNames.Security.HIT_SECURITY_ERROR
+            
+#*******************************************************************************
+# Content Models
+# Database content that is critical to make the core features of the app run.
+#*******************************************************************************
+class Content:
+    class OnlineContent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False) 
+        fromUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        key = models.CharField(default=None, null=True, max_length=Const.Database.MaxLengths.STATIC_URL)
+        contentType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.CONTENT_TYPE)
+     
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ONLINE
+        
+    class LocalPost(OnlineContent):
+        id = models.OneToOneField(OnlineContent, parent_link=True)
+        latitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+        longitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+        text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.LOCALPOST_TEXT)
+        arn = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.AWS_ARN)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ONLINE_LOCALPOST
+             
+    
+    class Message(OnlineContent):
+        id = models.OneToOneField(OnlineContent, parent_link=True)
+        toUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.MESSAGE_TEXT)
+      
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ONLINE_MESSAGE
+             
+    class Thread(OnlineContent):
+        id = models.OneToOneField(OnlineContent, parent_link=True)
+        title = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TITLE, default=None, null=False)
+        text = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TEXT, default=None, null=False)
+        arn = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.AWS_ARN)
+         
+        # Optional fields, denormalized
+        timeOfLastReply = models.IntegerField(default=time.time, null=False)
+        replyCount = models.IntegerField(default=None, null=False)
+        uniquePostersCount = models.IntegerField(default=None, null=False)
+        imageReplyCount = models.IntegerField(default=None, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ONLINE_THREAD
+                  
+    class Reply(OnlineContent):
+        id = models.OneToOneField(OnlineContent, parent_link=True)
+        parentThread = models.ForeignKey(Thread, related_name='+', default=None, null=False)
+        text = models.CharField(max_length=Const.Database.MaxLengths.Content.REPLY_TEXT, default=None, null=True)
+          
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ONLINE_REPLY
+         
+    class ArchivedContent(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=None, null=False)
+        timeArchived = models.IntegerField(default=time.time, null=False) 
+        timeCreated = models.IntegerField(default=None, null=False) 
+        fromUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        key = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.STATIC_URL)
+        contentType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.CONTENT_TYPE)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ARCHIVED
+         
+    class ArchivedLocalPost(ArchivedContent):
+        id = models.OneToOneField(ArchivedContent, parent_link=True)
+        latitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+        longitude = models.DecimalField(max_digits=9, decimal_places=6, db_index=True, default=None, null=False)
+        text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.LOCALPOST_TEXT)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ARCHIVED_LOCALPOST
+             
+    class ArchivedMessage(ArchivedContent):
+        id = models.OneToOneField(ArchivedContent, parent_link=True)
+        toUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        text = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.Content.MESSAGE_TEXT)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ARCHIVED_MESSAGE
+     
+    class ArchivedThread(ArchivedContent):
+        id = models.OneToOneField(ArchivedContent, parent_link=True)
+        name = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_NAME, default=None, null=True)
+        title = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TITLE, default=None, null=True)
+        text = models.CharField(max_length=Const.Database.MaxLengths.Content.THREAD_TEXT, default=None, null=False)
+              
+        # Optional fields, denormalized
+        timeOfLastReply = models.IntegerField(default=None, null=False)
+        replyCount = models.IntegerField(default=None, null=False)
+        uniquePostersCount = models.IntegerField(default=None, null=False)
+        imageReplyCount = models.IntegerField(default=None, null=False)
+          
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ARCHIVED_THREAD
+              
+    class ArchivedReply(ArchivedContent):
+        id = models.OneToOneField(ArchivedContent, parent_link=True)
+        parentThread = models.ForeignKey(ArchivedThread, related_name='+', default=None, null=False)
+        name = models.CharField(max_length=Const.Database.MaxLengths.Content.REPLY_NAME, default=None, null=True)
+        text = models.CharField(max_length=Const.Database.MaxLengths.Content.REPLY_TEXT, default=None, null=True)
+          
+        class Meta:
+            db_table = Const.Database.TableNames.Content.ARCHIVED_REPLY
+   
+#*******************************************************************************
+# Moderation models
+# Database content that is used for moderation
+#*******************************************************************************
+class Moderation:
+    class Block(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        blockerUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        blockedUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Moderation.BLOCK
+     
+    class ModAction(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False) 
+        result = models.CharField(default=None, null=False, max_length=3)
+        contentID = UUIDBinaryField(default=None, null=False)
+        contentType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.CONTENT_TYPE)
+
+
+        class Meta:
+            db_table = Const.Database.TableNames.Moderation.MOD_ACTION
+         
+    class Report(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False) 
+        fromUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False)
+        contentID = UUIDBinaryField(default=None, null=False)
+        modAction = models.ForeignKey(ModAction, related_name='+', default=None, null=True)
+        contentType = models.CharField(default=None, null=False, max_length=Const.Database.MaxLengths.CONTENT_TYPE)
+      
+        class Meta:
+            db_table = Const.Database.TableNames.Moderation.REPORT
+     
+    class Ban(models.Model):
+        id = UUIDBinaryField(primary_key=True, default=Utils.CreateNewUUIDForDB, null=False)
+        timeCreated = models.IntegerField(default=time.time, null=False) 
+        bannedUser = models.ForeignKey(Security.User, related_name='+', default=None, null=False) 
+        banLengthHours = models.IntegerField(default=None, null=False)
+         
+        class Meta:
+            db_table = Const.Database.TableNames.Moderation.BAN
+  
+        
+#*******************************************************************************
+# Models used for logging server errors.
+#*******************************************************************************
+ 
+#-------------------------------------------------------------------------------
+# Model for a server error (500 type). To be used by the devs for realtime
+# alerts and bug notification.
+#-------------------------------------------------------------------------------
+class ServerError(models.Model):
+    timeCreated = models.IntegerField(default=time.time, null=False)
+    file = models.CharField(max_length=Const.Database.MaxLengths.ServerError.FILENAME, default=None, null=False)
+    lineNum = models.IntegerField(default=None, null=False)
+    exeptionMessage = models.TextField(default=None, null=False)
+    stackTrace = models.TextField(default=None, null=False)
+     
+    class Meta:
+        db_table = Const.Database.TableNames.ServerError.ERROR
+         
+#*******************************************************************************
+# Models that are used in the security layer.
+# Good for identifying security threats
+#*******************************************************************************
+ 
+#-------------------------------------------------------------------------------
+# Model for a security error. 
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
+# Model for a temporarily client session token
+# Tokens are generated by AWS cognito and we also use them in our servers
+#-------------------------------------------------------------------------------
+
+         
+#-------------------------------------------------------------------------------
+# Temp table to store a single value: the time that an email notifcation
+# was just sent out. This is a hack to prevent thousands of emails from being
+# sent and killing the server
+#-------------------------------------------------------------------------------
+class TimeLastNotifcationSent(models.Model):
+    timeLastSent = models.IntegerField(default=None, null=False)
+     
+    class Meta:
+        db_table = Const.Database.TableNames.NOTIFICATION_TEMP_TIME_LAST_SENT
+         
+
+
+        
+
+        
+
+        

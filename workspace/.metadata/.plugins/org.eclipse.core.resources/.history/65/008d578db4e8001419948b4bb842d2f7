@@ -1,0 +1,38 @@
+#===============================================================================
+# Tests
+#===============================================================================
+
+from django.core.urlresolvers import reverse
+from django.test import TestCase
+from Boomerang.Models.LocalPostModel import LocalPost
+import json
+import base64
+
+#===============================================================================
+# Testing the UploadLocalPost functionality.
+#===============================================================================
+class UploadLocalPostViewTest(TestCase):
+    def test(self):
+        #Create all the fake json data      
+        latitude = 123.3242423
+        longitude = 90.534532
+        
+        # Read a fake image file. We are assuming client is sending us the image
+        # in Json as a base64 string.
+        with open("/var/webserver-data/test/local/source/50x50.jpg", "rb") as imageFile:
+            imageStr = base64.b64encode(imageFile.read()).decode()
+        
+        data = { 'latitude': latitude,
+                 'longitude': longitude,
+                 'image': imageStr
+                }
+
+        #
+        response = self.client.post('/UploadLocalPost/', content_type='application/json', data=json.dumps(data))
+        self.assertEqual(response.status_code, 200)
+        
+        # TODO: INCREASE THE TESTS. CHECKING IF STUFF WAS WRITTEN TO THE 
+        # TEST DATABASE OKAY.
+        # CHECK THE POST TIMES.
+        
+        
